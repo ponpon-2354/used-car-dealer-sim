@@ -78,6 +78,11 @@ canvas#cv{display:block;width:100%;aspect-ratio:480/360}
 .zukan-cell.undiscovered{color:#b6a888;background:#faf3df}
 .slotpick{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
 .slotpick button{min-height:44px;flex:1 1 30%}
+#bizBtn{width:100%;min-height:58px;font-size:19px;font-weight:800;color:#fff;background:linear-gradient(180deg,#3fbf72,#28a05a);border:2.5px solid #3a332a;border-radius:14px;box-shadow:0 3px 0 #3a332a;cursor:pointer}
+#bizBtn:disabled{opacity:.55}
+#bizBtn:active{transform:translateY(2px);box-shadow:0 1px 0 #3a332a}
+input[type=range]{height:28px;accent-color:#2456a6}
+.pricebox{background:#f4f8ff;border:1.5px solid #c9dcf5;border-radius:12px;padding:10px;margin-top:8px}
 </style>
 </head>
 <body>
@@ -107,27 +112,21 @@ canvas#cv{display:block;width:100%;aspect-ratio:480/360}
   <div id="topbar">
     <span class="date" id="tbDate">----</span>
     <span class="money" id="tbMoney">💰 ---万円</span>
-    <span class="pt" id="tbPt">🔬 0 Pt</span>
     <span class="sold" id="tbSold">⭐ ---</span>
   </div>
   <div id="main">
     <div id="cvWrap"><canvas id="cv" width="960" height="720"></canvas></div>
     <div id="speedRow">
-      <button id="sp0" onclick="setSpeed(0)">⏸ 止める</button>
-      <button id="sp1" onclick="setSpeed(1)">▶ ふつう</button>
-      <button id="sp2" onclick="setSpeed(2)">⏩ 早い</button>
-      <button id="sp3" onclick="setSpeed(3)">⏭ とても早い</button>
+      <button id="bizBtn" onclick="startBusinessDay()">▶ 営業開始（次の日へ）</button>
     </div>
     <div id="guide" class="hidden"></div>
     <div id="news">🚗 お店を開きました！</div>
     <div id="panelRoot"></div>
   </div>
   <div id="nav">
-    <button data-nav="shop" onclick="showPanel('shop')">🏠 店</button>
+    <button data-nav="showroom" onclick="showPanel('showroom')">🏠 展示場</button>
     <button data-nav="buy" onclick="showPanel('buy')">🚗 仕入れ</button>
-    <button data-nav="work" onclick="showPanel('work')">🔧 整備<span class="badge-n" id="badgeWork" style="display:none"></span></button>
-    <button data-nav="decor" onclick="showPanel('decor')">🪴 配置</button>
-    <button data-nav="staff" onclick="showPanel('staff')">👥 仲間</button>
+    <button data-nav="grow" onclick="showPanel('grow')">📈 店を大きく</button>
     <button data-nav="zukan" onclick="showPanel('zukan')">📖 図鑑</button>
   </div>
 </div>
@@ -137,6 +136,13 @@ canvas#cv{display:block;width:100%;aspect-ratio:480/360}
   <h2>📅 今月のまとめ</h2>
   <div id="monthBody"></div>
   <div class="row" style="margin-top:12px"><button class="primary" style="min-height:52px" onclick="closeMonth()">わかった！</button></div>
+</div></div>
+
+<!-- 営業日報 -->
+<div class="modal" id="reportModal"><div class="mbox">
+  <h2>📋 営業日報</h2>
+  <div id="reportBody"></div>
+  <div class="row" style="margin-top:12px"><button class="primary" style="min-height:52px" onclick="closeReport()">わかった！</button></div>
 </div></div>
 
 <!-- お知らせポップアップ -->
@@ -307,7 +313,7 @@ const RIVALS=[{name:"ライバルA店",sold:42},{name:"ライバルB店",sold:26
    ================================================================ */
 let gameState=null;
 let curSlot=0;
-let curPanel="shop";
+let curPanel="showroom";
 let visitors=[];   /* 来客（画面上の存在。セーブしない） */
 let staffFigs=[];  /* 仲間の姿（画面用） */
 let floats=[];     /* 飛び出す文字 */
@@ -354,6 +360,12 @@ function normalizeSave(o){
   if(!g.zukanCars)g.zukanCars={};
   if(!g.zukanSpots)g.zukanSpots={};
   if(g.lastBaitoDay===undefined)g.lastBaitoDay=-1;
+  /* 分かりやすさモデルへの移行：複雑な仕組みのデータは捨て、売値を引き継ぐ */
+  g.staff=[]; g.candidates=[]; g.decors={}; g.pit=null; g.pitQueue=[];
+  (g.cars||[]).forEach(function(c){
+    if(c.buyPrice===undefined)c.buyPrice=Math.round(c.market*0.8/10000)*10000;
+    if(!c.sellPrice)c.sellPrice=Math.max(10000,Math.round(c.market*(CONFIG.tierMul[c.tier]||1.1)*(CONFIG.condMul[c.cond]||1)/10000)*10000);
+  });
   if(g.tutStep===undefined)g.tutStep=3;
   /* 車の追加項目 */
   (g.cars||[]).forEach(function(c){
@@ -434,16 +446,12 @@ function spotEffects(spotIdx, car){
   return eff;
 }
 function carCharm(car){
-  const spot=carSpot(car.id);
-  const eff=spotEffects(spot, car);
-  return Math.round((car.charm + car.cond*3 + car.customLv*CONFIG.customCharm) * eff.charmMul);
+  return car.charm + car.cond*3;
 }
 /* 販売価格 ＝ 相場 × 値段の付け方 × 状態倍率 × カスタム倍率 × スポット倍率 */
 function carPrice(car){
-  const spot=carSpot(car.id);
-  const eff=spotEffects(spot, car);
-  let p=car.market * (CONFIG.tierMul[car.tier]||1.1) * CONFIG.condMul[car.cond] * (1+car.customLv*CONFIG.customMulPer) * eff.priceMul;
-  return Math.max(10000, Math.round(p/10000)*10000);
+  if(car.sellPrice>0)return car.sellPrice;
+  return Math.max(10000, Math.round(car.market*1.1/10000)*10000);
 }
 /* 店の清潔感（置いた装飾から計算、最大15） */
 function cleanliness(){
@@ -493,10 +501,11 @@ function buyCar(id){
   const idx=gameState.market.findIndex(function(c){return c.id===id;});
   if(idx<0)return;
   const c=gameState.market[idx];
-  if(gameState.cars.length>=spotCount()+pitCount()){news("🚙 置ける場所がいっぱいです。「配置」で店を大きくしよう");return;}
+  if(gameState.cars.length>=spotCount()){news("🚙 置ける場所がいっぱいです。「店を大きく」で枠を増やそう");return;}
   if(gameState.money<c.buyPrice){news("💦 お金が足りません");return;}
   gameState.money-=c.buyPrice;
   gameState.month.expense+=0;
+  c.sellPrice=Math.max(10000,Math.round(c.market*1.1/10000)*10000);
   gameState.cars.push(c);
   gameState.market.splice(idx,1);
   news("🚗 "+c.maker+" "+c.name+" を "+man(c.buyPrice)+" で仕入れました");
@@ -1114,12 +1123,8 @@ function closingChance(cu){
   ch+=(price<=cu.budget)?CONFIG.closeBudgetIn:CONFIG.closeBudgetOver;
   const charm=carCharm(car);
   ch+=(charm>=24?8:(charm>=16?4:0));
-  if(cu.attendant)ch+=CONFIG.talkBonus[cu.attendant.rank]||0;
-  ch+=cleanliness();
-  const eff=spotEffects(carSpot(car.id),car);
-  ch+=eff.closeAdd;
-  ch+=CONFIG.tierClose[car.tier]||0;
-  return clamp(Math.round(ch),5,95);
+  ch=Math.round(ch*appealOf(car).mul);
+  return clamp(ch,5,95);
 }
 function removeVisitor(id){
   const cu=visitors.find(function(v){return v.id===id;});
@@ -1144,6 +1149,7 @@ function resolveSale(cu){
     if(car.reservedBy===cu.id)car.reservedBy=0;
     releaseAttendant(cu);
     cu.state="leave";cu.tx=ENTRANCE.x;cu.ty=ENTRANCE.y;
+    if(dayRunning&&dayStats)dayStats.events.push("👋 "+cu.name+"さんは買わずに帰りました");
     news(cu.name+"さん（"+cu.arch+"）は買わずに帰りました");
     renderPanel();
   }
@@ -1156,11 +1162,10 @@ function finishSale(cu){
   gameState.money+=price;
   gameState.month.income+=price;gameState.month.sold++;
   gameState.sold++;gameState.yearSold++;gameState.yearIncome+=price;
-  gameState.pt+=1;
-  const oldRank=bossRank();
-  gameState.bossExp++;
-  /* 相性スポットの登録（売れた車にかかっていたもの） */
-  spotEffects(carSpot(car.id),car).combos.forEach(function(cb){gameState.zukanSpots[cb.id]=true;});
+  if(dayRunning&&dayStats){
+    dayStats.sold++; dayStats.income+=price; dayStats.profit+=price-(car.buyPrice||0);
+    dayStats.events.push("🎉 "+cu.name+"さんが "+car.name+" を "+man(price)+" で購入（粗利 "+man(price-(car.buyPrice||0))+"）");
+  }
   gameState.zukanCars[car.name]=true;
   gameState.cars=gameState.cars.filter(function(c){return c.id!==car.id;});
   addFloat(DESK_FRONT.x,DESK_FRONT.y-52,"成約！","#d6336c");
@@ -1169,9 +1174,6 @@ function finishSale(cu){
   if(gameState.tutStep<2)gameState.tutStep=2;
   const newTypes=unlockedTypes().filter(function(t){return !typesBefore.includes(t);});
   let pop="";
-  if(bossRank()!==oldRank){
-    pop+="<div class='rankpop'>🎊</div><p style='text-align:center;font-size:18px'><b>社長の営業ランクが上がった！</b><br>営業ランク <span class='rankbig' style='color:"+RANK_COLOR[bossRank()]+"'>"+bossRank()+"</span><br><span class='small'>話術が上がって 成約率アップ</span></p>";
-  }
   if(newTypes.length){
     pop+="<div class='rankpop'>🚀</div><p style='text-align:center;font-size:18px'><b>新しい車が扱えるようになった！</b><br><b>"+newTypes.join(" と ")+"</b> も仕入れられるよ<br><span class='small'>お店が どんどん大きくなっていくね</span></p>";
   }
@@ -1246,21 +1248,6 @@ function tickFigs(){
    ================================================================ */
 let marketDirty=false;
 function daysInMonth(y,m){return new Date(y,m,0).getDate();}
-function nextDay(){
-  gameState.days++;gameState.d++;
-  ensurePlan();
-  /* 今日来るお客さん */
-  if(gameState.plan){
-    const today=gameState.plan.days.filter(function(d){return d===gameState.d;}).length;
-    const already=gameState.plan.days.filter(function(d){return d<gameState.d;}).length;
-    let due=already+today;
-    while(gameState.plan.spawned<due){spawnCustomer();gameState.plan.spawned++;}
-  }
-  /* 市場の入れ替え（仕入れ画面を開いている間は保留） */
-  if(curPanel==="buy")marketDirty=true;else refreshMarket();
-  if(gameState.d>daysInMonth(gameState.y,gameState.m))monthClose();
-  renderTop();renderPanel();autoSave();
-}
 function genCandidates(){
   gameState.candidates=[];
   for(let i=0;i<3;i++){
@@ -1400,18 +1387,10 @@ function drawScene(){
     if(!open){ g.font='13px sans-serif'; g.textAlign='center'; g.fillText('🔒',p.cx,p.cy+5); }
     else if(!s.cars[i]){ g.fillStyle='rgba(58,51,40,.35)'; g.font='bold 9px sans-serif'; g.textAlign='center'; g.fillText('空き',p.cx,p.y+p.h-4); }
   }
-  /* 装飾スロット */
-  for(let i=0;i<16;i++){
-    const d=decorSlotPos(i), id=s.decors[i];
-    g.fillStyle='rgba(255,255,255,.25)'; rr(g,d.x,d.y,d.w,d.h,4); g.fill();
-    if(id){ const dc=decorById(id); g.font='17px sans-serif'; g.textAlign='center'; g.fillText(dc.emoji,d.cx,d.cy+6); }
-    else { g.strokeStyle='rgba(255,255,255,.5)'; g.lineWidth=1; rr(g,d.x+3,d.y+3,d.w-6,d.h-6,3); g.stroke(); }
-  }
   /* 展示車＋値札 */
   for(let i=0;i<16;i++){
     const car=s.cars[i]; if(!car) continue;
-    const p=spotPos(i), combo=spotEffects(i,car).combos.length>0;
-    if(combo){ g.strokeStyle='#ff7eb6'; g.lineWidth=2.4; rr(g,p.x-2,p.y-2,p.w+4,p.h+6,7); g.stroke(); spark(g,p.x+p.w-2,p.y-2,5); }
+    const p=spotPos(i);
     drawIsoCar(g,p.cx,p.y+40,car);
     g.fillStyle='#f08a2e'; rr(g,p.cx-18,p.y-13,36,13,4); g.fill(); g.strokeStyle=INK; g.lineWidth=1; g.stroke();
     g.fillStyle='#fff'; g.font='bold 9px sans-serif'; g.textAlign='center'; g.fillText(man(car.price),p.cx,p.y-3);
@@ -1428,7 +1407,7 @@ function drawScene(){
     g.fillStyle='#fff'; rr(g,24,298,120,9,4); g.fill(); g.strokeStyle=INK; g.lineWidth=1; g.stroke();
     g.fillStyle='#63bb63'; rr(g,25,299,118*r,7,3); g.fill();
     g.fillStyle=INK; s.pitQueue.forEach((q,qi)=>{ const qc=s.cars.find(c=>c.id===q.carId); if(qc){ g.font='9px sans-serif'; g.textAlign='left'; g.fillText('⏳'+qc.name,124,276+qi*11); } });
-  } else { g.fillStyle='rgba(58,51,40,.45)'; g.font='10px sans-serif'; g.textAlign='center'; g.fillText('（整備メニューから作業できるよ）',94,282); }
+  } else { g.fillStyle='rgba(58,51,40,.45)'; g.font='10px sans-serif'; g.textAlign='center'; g.fillText('（展示場で洗車・整備できるよ）',94,282); }
   /* 商談デスク */
   g.fillStyle='#dfe9f5'; rr(g,316,238,156,76,6); g.fill(); g.strokeStyle=INK; g.lineWidth=1.4; g.stroke();
   g.fillStyle='#b08954'; rr(g,332,264,124,24,4); g.fill(); g.strokeStyle=INK; g.stroke();
@@ -1470,11 +1449,9 @@ function renderTop(){
   if(!gameState)return;
   $("tbDate").textContent="📅 "+gameState.y+"年"+gameState.m+"月"+gameState.d+"日";
   $("tbMoney").textContent="💰 "+man(gameState.money);
-  $("tbPt").textContent="🔬 "+gameState.pt+" Pt";
-  $("tbSold").textContent="⭐ "+storeRank()+"（売れた車 "+gameState.sold+"台）";
-  const bw=$("badgeWork");
-  const n=pitCount();
-  bw.style.display=n?"inline-block":"none";bw.textContent=n;
+  $("tbSold").textContent="🎉 売れた車 "+gameState.sold+"台";
+  const bb=$("bizBtn");
+  if(bb){ bb.disabled=dayRunning; bb.textContent=dayRunning?"☀️ 営業中…":"▶ 営業開始（次の日へ）"; }
 }
 function renderSpeed(){
   if(!gameState)return;
@@ -1484,9 +1461,9 @@ function setSpeed(n){if(!gameState)return;gameState.speed=n;renderSpeed();autoSa
 function renderGuide(){
   const el=$("guide");if(!gameState){el.classList.add("hidden");return;}
   const texts=[
-    "🚗 最初の一台はもう置いてあるよ。お客さんが来るのを待とう！「仕入れ」で車を増やすこともできるよ",
-    "👀 お客さんが車を見に来たよ。商談が終わると自動で売れるかどうか決まるよ（成約率が大事！）",
-    "🎉 売れた！「整備」で車を良くしたり、「配置」で飾りを置いて相性スポットを作ると、もっと売れるようになるよ"
+    "🚗 最初の一台はもう置いてあるよ。「仕入れ」で車を増やして、「展示場」で値段を決めたら「▶ 営業開始」を押そう！",
+    "💴 車を仕入れたね。「展示場」で洗車・整備と値段を決めて、「▶ 営業開始」でお客さんを呼ぼう",
+    "🎉 売れた！「展示場」の洗車・整備で状態を上げると売れやすくなるよ。値段の付け方で粗利と売れやすさが変わるよ"
   ];
   if(gameState.tutStep<3){el.textContent=texts[gameState.tutStep];el.classList.remove("hidden");}
   else el.classList.add("hidden");
@@ -1500,11 +1477,9 @@ function renderPanel(){
   document.querySelectorAll("#nav button").forEach(function(b){b.classList.toggle("on",b.dataset.nav===curPanel);});
   const root=$("panelRoot");
   let h="";
-  if(curPanel==="shop")h=shopPanel();
+  if(curPanel==="showroom")h=showroomPanel();
   else if(curPanel==="buy")h=buyPanel();
-  else if(curPanel==="work")h=workPanel();
-  else if(curPanel==="decor")h=decorPanel();
-  else if(curPanel==="staff")h=staffPanel();
+  else if(curPanel==="grow")h=growPanel();
   else if(curPanel==="zukan")h=zukanPanel();
   if(h!==_panelHtml){root.innerHTML=h;_panelHtml=h;}
 }
@@ -1514,82 +1489,17 @@ function specHtml(c){
   "<span class='spec'>色 <b>"+c.color+"</b></span>"+
   "<span class='spec'>魅力 <b>"+(c.charm+c.customLv*CONFIG.customCharm)+"</b></span></div>";
 }
-function shopPanel(){
-  const uts=unlockedTypes(),nu=nextUnlock();
-  const specialty=uts.length===1?"軽自動車専門店":(uts.length>=TYPES.length?"全車種のお店":"取扱車種 拡大中");
-  let h="<div class='panel'><h2>🏠 "+esc(gameState.shopName)+"</h2>"+
-  "<div class='moneyrow'><span>🏪 お店の種類</span><span class='v'>"+specialty+"</span></div>"+
-  "<div class='moneyrow'><span>⭐ 店舗ランク</span><span class='v'>"+storeRank()+"</span></div>"+
-  "<div class='moneyrow'><span>🚗 扱える車</span><span class='v'>"+uts.join("・")+"</span></div>"+
-  (nu?"<div class='moneyrow'><span>🎯 次の目標</span><span class='v'>あと "+(nu.sold-gameState.sold)+"台 売ると「"+nu.types.join("・")+"」が扱える</span></div>"
-     :"<div class='moneyrow'><span>🎯 次の目標</span><span class='v'>全車種 解禁済み！🎉</span></div>")+
-  "<div class='moneyrow'><span>🚙 展示中の車</span><span class='v'>"+displayedCars().length+"台 / "+spotCount()+"台まで</span></div>"+
-  "<div class='moneyrow'><span>🧹 店の清潔感</span><span class='v'>+"+cleanliness()+"（成約率アップ）</span></div>"+
-  "<div class='moneyrow'><span>📖 図鑑</span><span class='v'>車 "+Object.keys(gameState.zukanCars).length+"/61種 ・ スポット "+Object.keys(gameState.zukanSpots).length+"/"+COMBOS.length+"</span></div>";
-  if(gameState.money<CONFIG.baitoMoneyLine){
-    h+="<div class='row' style='margin-top:10px'><button class='good' style='min-height:52px' onclick='doBaito()' "+(gameState.lastBaitoDay===gameState.days?"disabled":"")+">🧽 洗車バイトに行く（+"+man(CONFIG.baitoPay)+"・1日1回）</button></div>";
-  }
-  h+="<div class='row' style='margin-top:10px'><button onclick='renameShop()'>✏️ 店の名前を変える</button>"+
-  "<button onclick='backToTitle()'>🏠 タイトルにもどる</button></div>"+
-  "<p class='note'>遊び方: 仕入れ → 整備で良くする → 飾りを置いて相性スポット → お客さんが来て自動で商談。売れた台数で扱える車と店舗ランクが上がるよ。<br>売値 ＝ 相場 × 値段の付け方 × 状態 × カスタム × スポット。成約率 ＝ 好みの一致 ＋ 話術 ＋ 清潔感 ＋ スポット − 高すぎペナルティ。</p></div>";
-  return h;
-}
 function buyPanel(){
   let h="<div class='panel'><h2>🚗 仕入れ</h2>"+
-  "<p class='note'>お金 "+man(Math.max(0,gameState.money))+" ／ 展示できる車 あと "+Math.max(0,spotCount()+pitCount()-gameState.cars.length)+"台（毎日 新しい車が並びます）<br>今 扱えるのは <b>"+unlockedTypes().join("・")+"</b> だけ。売った台数が増えると広がります</p>";
+  "<p class='note'>お金 "+man(Math.max(0,gameState.money))+" ／ 展示できる車 あと "+Math.max(0,spotCount()-gameState.cars.length)+"台（毎日 新しい車が並びます）<br>今 扱えるのは <b>"+unlockedTypes().join("・")+"</b> だけ。売った台数が増えると広がります</p>";
   if(!gameState.market.length)h+="<p>今日の車は売り切れです。明日を待ちましょう。</p>";
   gameState.market.forEach(function(c){
     h+="<div class='card'>"+carImgHtml(c)+"<h3>"+c.maker+" "+c.name+"<span class='badge'>"+c.type+"</span><span class='badge st"+c.cond+"'>状態: "+COND_WORD[c.cond]+"</span></h3>"+
     specHtml(c)+
     "<div class='moneyrow'><span>相場（売るときの目安）</span><span class='v'>"+man(c.market)+"</span></div>"+
     "<div class='moneyrow'><span>仕入値</span><span class='v' style='color:#b97a00;font-size:18px'>"+man(c.buyPrice)+"</span></div>"+
+    "<div class='moneyrow'><span>見込み粗利（相場 − 仕入値）</span><span class='v' style='color:#1d7a3a'>+"+man(c.market-c.buyPrice)+"</span></div>"+
     "<div class='row'><button class='good' style='min-height:52px;font-size:17px' onclick='buyCar("+c.id+")'>🚗 この車を仕入れる</button></div></div>";
-  });
-  return h+"</div>";
-}
-function workPanel(){
-  let h="<div class='panel'><h2>🔧 整備・値付け</h2>";
-  /* ピットの状態 */
-  if(gameState.pit){
-    const car=gameState.cars.find(function(c){return c.id===gameState.pit.carId;});
-    const w=WORKS[gameState.pit.work];
-    h+="<div class='card'><h3>🔧 ピット作業中："+(car?esc(car.name):"")+" の "+w.name+"</h3>"+
-    "<div class='hpbar'><i style='width:"+Math.round(gameState.pit.prog*100)+"%'></i></div>"+
-    "<p class='note'>担当："+mechName()+"（技術で速さが変わる）"+(gameState.pitQueue.length?" ／ 待ち "+gameState.pitQueue.length+"台":"")+"</p></div>";
-  }else{
-    h+="<p class='note'>ピットは空いています。下の車から整備を選んでね（担当："+mechName()+"）。</p>";
-  }
-  if(!gameState.researched.includes("custom")){
-    h+="<div class='card'><h3>🔬 カスタム研究</h3><p class='note'>技術Pt "+RESEARCHES.custom.pt+" で研究すると、カスタム整備が使えるようになります（今 "+gameState.pt+" Pt）</p>"+
-    "<div class='row'><button onclick='doResearch(\"custom\")' "+(gameState.pt<RESEARCHES.custom.pt?"disabled":"")+">🔬 研究する（"+RESEARCHES.custom.pt+" Pt）</button></div></div>";
-  }
-  if(!gameState.cars.length)h+="<p>車がありません。「仕入れ」で買ってこよう。</p>";
-  gameState.cars.forEach(function(c){
-    const spot=carSpot(c.id);
-    const eff=spotEffects(spot,c);
-    const price=carPrice(c);
-    h+="<div class='card'>"+carImgHtml(c)+"<h3>"+c.maker+" "+c.name+"<span class='badge'>"+c.type+"</span><span class='badge st"+c.cond+"'>状態: "+COND_WORD[c.cond]+"</span>"+
-    (c.customLv?"<span class='badge'>🎨 カスタム"+c.customLv+"</span>":"")+
-    eff.combos.map(function(cb){return "<span class='badge combo'>✨ "+cb.name+"</span>";}).join("")+"</h3>"+
-    specHtml(c)+
-    "<div class='moneyrow'><span>相場</span><span class='v'>"+man(c.market)+"</span></div>"+
-    "<div class='moneyrow'><span>売値（自動計算）</span><span class='v pricebig'>"+man(price)+"</span></div>"+
-    "<p class='note'>相場 × 付け方"+(CONFIG.tierMul[c.tier])+" × 状態"+CONFIG.condMul[c.cond]+(c.customLv?" × カスタム"+(1+c.customLv*CONFIG.customMulPer).toFixed(2):"")+(eff.priceMul!==1?" × スポット"+eff.priceMul.toFixed(1):"")+" ／ 魅力 "+carCharm(c)+(c.inPit?" ／ 🔧 整備中":"")+"</p>"+
-    "<div class='row'>"+
-    ["安い","おすすめ","高い"].map(function(t){return "<button class='tierbtn"+(c.tier===t?" on":"")+"' onclick='setTier("+c.id+",\""+t+"\")'>"+t+"<br><span class='small'>×"+CONFIG.tierMul[t]+"</span></button>";}).join("")+
-    "</div>"+
-    "<div class='row' style='margin-top:6px'>"+
-    Object.keys(WORKS).map(function(k){
-      const w=WORKS[k];
-      let dis="";
-      if(c.inPit)dis="disabled";
-      else if(w.research&&!gameState.researched.includes(w.research))dis="disabled";
-      else if(k==="custom"&&c.customLv>=3)dis="disabled";
-      else if(k==="wash"&&c.cond>=2)dis="disabled";
-      else if(gameState.money<w.cost*10000)dis="disabled";
-      return "<button onclick='startWork("+c.id+",\""+k+"\")' "+dis+">"+w.emoji+" "+w.name+"<br><span class='small'>"+w.cost+"万円・"+w.desc+"</span></button>";
-    }).join("")+
-    "</div></div>";
   });
   return h+"</div>";
 }
@@ -1610,55 +1520,6 @@ function doResearch(key){
 }
 function slotName(idx){
   return (idx<8?"真ん中の列":"下の列")+"・左から"+(idx%8+1)+"番目";
-}
-function decorPanel(){
-  let h="<div class='panel'><h2>🪴 配置・お店を大きくする</h2>";
-  /* 店の大きさ */
-  const cur=SHOP_SIZES[gameState.shopSize];
-  h+="<h3 style='margin:6px 0'>🏢 店の大きさ："+cur.name+"（展示 "+cur.cap+"台）</h3>";
-  if(gameState.shopSize<SHOP_SIZES.length-1){
-    const nx=SHOP_SIZES[gameState.shopSize+1];
-    h+="<div class='row'><button class='primary' onclick='growShop()' "+(gameState.money<nx.cost*10000?"disabled":"")+">🏢 "+nx.name+"にする（展示 "+nx.cap+"台・"+man(nx.cost*10000)+"）</button></div>";
-  }else h+="<p class='note'>いちばん大きな店です。</p>";
-  /* 配置モード */
-  if(placingDecor){
-    const d=decorById(placingDecor);
-    h+="<div class='card'><h3>"+d.emoji+" "+d.name+" を置く場所を選んでね</h3><p class='note'>車のとなり（上下）に置くと相性スポットになることがあるよ。</p><div class='slotpick'>";
-    for(let i=0;i<16;i++){
-      if(gameState.decors[i])continue;
-      const adj=adjacentSpots(i).map(function(si){
-        const dd=displayedCars().find(function(x){return x.spot===si;});
-        return dd?dd.car.name:"（車なし）";
-      }).join("・");
-      h+="<button onclick='placeDecorAt("+i+")'>"+slotName(i)+"<br><span class='small'>となり: "+adj+"</span></button>";
-    }
-    h+="</div><div class='row'><button onclick='cancelPlacing()'>やめる</button></div></div>";
-  }
-  /* 装飾リスト */
-  h+="<h3 style='margin:10px 0 6px'>🪴 飾り・設備</h3>";
-  DECORS.forEach(function(d){
-    const researched=gameState.researched.includes(d.id);
-    const placedN=Object.keys(gameState.decors).filter(function(k){return gameState.decors[k]===d.id;}).length;
-    h+="<div class='card'><h3>"+d.emoji+" "+d.name+(placedN?"<span class='badge'>"+placedN+"個 配置中</span>":"")+"</h3>"+
-    "<p class='note'>"+d.desc+" ／ 清潔感+"+d.clean+"</p>";
-    if(!researched){
-      h+="<div class='row'><button onclick='doResearch(\""+d.id+"\")' "+(gameState.pt<d.pt?"disabled":"")+">🔬 研究する（"+d.pt+" Pt・今 "+gameState.pt+" Pt）</button></div>";
-    }else{
-      h+="<div class='row'><button class='good' onclick='startPlacing(\""+d.id+"\")' "+(gameState.money<d.cost*10000?"disabled":"")+">🪴 置く（"+d.cost+"万円）</button></div>";
-    }
-    h+="</div>";
-  });
-  /* 配置済み */
-  const placed=Object.keys(gameState.decors);
-  if(placed.length){
-    h+="<h3 style='margin:10px 0 6px'>置いてあるもの</h3>";
-    placed.forEach(function(k){
-      const d=decorById(gameState.decors[k]);
-      h+="<div class='moneyrow'><span>"+(d?d.emoji+" "+d.name:"")+"（"+slotName(Number(k))+"）</span><button onclick='removeDecor("+k+")'>はずす</button></div>";
-    });
-  }
-  h+="<p class='note'>相性スポット例：スポーツ車＋のぼり旗、ボロ車＋洗車機、高級車＋観葉植物…。見つけると図鑑に登録されるよ。</p></div>";
-  return h;
 }
 function growShop(){
   const nx=SHOP_SIZES[gameState.shopSize+1];if(!nx)return;
@@ -1685,41 +1546,6 @@ function removeDecor(idx){
   delete gameState.decors[idx];
   renderAll();autoSave();
 }
-function staffPanel(){
-  let h="<div class='panel'><h2>👥 仲間</h2>"+
-  "<div class='card'><h3>🧑‍💼 社長（あなた）<span class='rankchip' style='background:"+RANK_COLOR[bossRank()]+"'>営業 "+bossRank()+"</span></h3>"+
-  "<p class='note'>話術 +"+(CONFIG.talkBonus[bossRank()])+" ／ 売った台数でランクアップ。整備も手伝います。</p></div>";
-  if(!gameState.staff.length)h+="<p class='note'>まだ仲間がいません。下の候補から雇えます（最大"+CONFIG.maxStaff+"人）。営業は商談を手伝い、整備士はピット作業が速くなります。</p>";
-  gameState.staff.forEach(function(s){
-    h+="<div class='card'><h3>"+(s.role==="mech"?"🔧":"💼")+" "+esc(s.name)+"<span class='rankchip' style='background:"+RANK_COLOR[s.rank]+"'>"+s.rank+"</span><span class='badge'>"+(s.role==="mech"?"整備":"営業")+"</span></h3>"+
-    "<div class='moneyrow'><span>給料</span><span class='v'>"+man(s.salary*10000)+" / 月</span></div>"+
-    "<p class='note'>"+(s.role==="mech"?("技術 ×"+CONFIG.mechFactor[s.rank]+"（作業が速い）"):("話術 +"+CONFIG.talkBonus[s.rank]+"（成約率アップ）"))+"</p>"+
-    "<div class='row'><button class='danger' onclick='fireStaff("+s.id+")'>やめてもらう</button></div></div>";
-  });
-  h+="<h3 style='margin:10px 0 6px'>雇える人（毎月 入れ替わります）</h3>";
-  if(gameState.staff.length>=CONFIG.maxStaff)h+="<p class='note'>仲間はいっぱいです。</p>";
-  gameState.candidates.forEach(function(c){
-    h+="<div class='card'><h3>"+(c.role==="mech"?"🔧":"💼")+" "+esc(c.name)+"<span class='rankchip' style='background:"+RANK_COLOR[c.rank]+"'>"+c.rank+"</span><span class='badge'>"+(c.role==="mech"?"整備":"営業")+"</span></h3>"+
-    "<div class='moneyrow'><span>給料</span><span class='v'>"+man(c.salary*10000)+" / 月</span></div>"+
-    "<div class='row'><button class='good' onclick='hireStaff("+c.id+")' "+(gameState.staff.length>=CONFIG.maxStaff?"disabled":"")+">🤝 雇う</button></div></div>";
-  });
-  return h+"</div>";
-}
-function hireStaff(id){
-  const idx=gameState.candidates.findIndex(function(c){return c.id===id;});
-  if(idx<0||gameState.staff.length>=CONFIG.maxStaff)return;
-  const c=gameState.candidates[idx];
-  gameState.staff.push(c);
-  gameState.candidates.splice(idx,1);
-  syncStaffFigs();
-  news("🤝 "+c.name+"さん（"+(c.role==="mech"?"整備":"営業")+"・ランク"+c.rank+"）が仲間になりました");
-  renderAll();autoSave();
-}
-function fireStaff(id){
-  gameState.staff=gameState.staff.filter(function(s){return s.id!==id;});
-  syncStaffFigs();
-  renderAll();autoSave();
-}
 function zukanPanel(){
   const gotCars=Object.keys(gameState.zukanCars).length;
   let h="<div class='panel'><h2>📖 図鑑</h2>"+
@@ -1732,12 +1558,6 @@ function zukanPanel(){
     });
     h+="</div>";
   });
-  h+="<h3 style='margin:14px 0 6px'>✨ 相性スポット図鑑（"+Object.keys(gameState.zukanSpots).length+" / "+COMBOS.length+"）</h3>";
-  COMBOS.forEach(function(cb){
-    const got=gameState.zukanSpots[cb.id];
-    const d=decorById(cb.decor);
-    h+="<div class='card'><h3>"+(got?"✨ "+cb.name:"？？？スポット")+"</h3><p class='note'>"+(got?cb.desc:("ヒント： "+(d?d.emoji+" "+d.name:"")+" のとなりがカギ"))+"</p></div>";
-  });
   return h+"</div>";
 }
 function renameShop(){
@@ -1746,6 +1566,149 @@ function renameShop(){
   const nm=name.trim().slice(0,12);
   if(!nm)return;
   gameState.shopName=nm;news("🏠 店の名前を「"+nm+"」に変えました");renderAll();autoSave();
+}
+
+/* ================================================================
+   分かりやすさ重視モデル（1日ボタン制・粗利・売れやすさ）
+   ================================================================ */
+const DAILY_COST=10000;
+let dayRunning=false, bizTicks=0, spawnQueue=0, pendingAdvance=false, dayStats=null, dayLabel="";
+function fairValue(car){ return Math.max(10000, Math.round(car.market*(CONFIG.condMul[car.cond]||1)/10000)*10000); }
+function appealOf(car){
+  const r=carPrice(car)/fairValue(car);
+  if(r<=0.88)return {label:"🔥 爆速で売れる", mul:1.65, bg:"#e6f7ec", fg:"#1d7a3a"};
+  if(r<=0.98)return {label:"✨ お買い得", mul:1.25, bg:"#e8f1fe", fg:"#2456a6"};
+  if(r<=1.08)return {label:"👍 適正価格", mul:1.0, bg:"#eef1f4", fg:"#3a5140"};
+  if(r<=1.20)return {label:"⚠️ やや強気", mul:0.55, bg:"#fdf3e0", fg:"#9a6a00"};
+  return {label:"🚫 高すぎ", mul:0.18, bg:"#fdecec", fg:"#b03030"};
+}
+function setSellPrice(id,val){
+  const c=gameState.cars.find(function(x){return x.id===id;}); if(!c)return;
+  c.sellPrice=Number(val); autoSave();
+}
+function updatePricePreview(id,val){
+  const c=gameState.cars.find(function(x){return x.id===id;}); if(!c)return;
+  c.sellPrice=Number(val);
+  const pv=$("pv-"+id), pf=$("pf-"+id), ap=$("ap-"+id);
+  if(pv)pv.textContent=man(Number(val));
+  if(pf){ const p=Number(val)-(c.buyPrice||0); pf.textContent="予想粗利 "+(p>=0?"+":"")+man(p); pf.style.color=p>=0?"#1d7a3a":"#b03030"; }
+  if(ap){ const a=appealOf(c); ap.textContent=a.label; ap.style.background=a.bg; ap.style.color=a.fg; }
+}
+function doClean(id){
+  const c=gameState.cars.find(function(x){return x.id===id;}); if(!c)return;
+  if(c.cond>=2){news("✨ もうピカピカです");return;}
+  if(gameState.money<10000){news("💦 お金が足りません（洗車は1万円）");return;}
+  gameState.money-=10000; c.cond++;
+  const p=spotPos(carSpot(id)); addFloat(p.cx,p.y-4,"✨ ピカピカ！","#2b8a3e");
+  news("🧼 "+c.name+" を洗車しました（状態アップ）");
+  renderAll(); autoSave();
+}
+function doRepair(id){
+  const c=gameState.cars.find(function(x){return x.id===id;}); if(!c)return;
+  if(c.cond>=2){news("🔧 もう完璧な状態です");return;}
+  if(gameState.money<30000){news("💦 お金が足りません（整備は3万円）");return;}
+  gameState.money-=30000; c.cond=2; c.charm+=3;
+  const p=spotPos(carSpot(id)); addFloat(p.cx,p.y-4,"🔧 整備完了！","#2456a6");
+  news("🔧 "+c.name+" を整備しました（状態がピカピカに）");
+  renderAll(); autoSave();
+}
+function startBusinessDay(){
+  if(!gameState||dayRunning)return;
+  if($("reportModal").classList.contains("open")||$("popModal").classList.contains("open"))return;
+  dayLabel=gameState.y+"年"+gameState.m+"月"+gameState.d+"日";
+  let n=ri(2,3)+(displayedCars().length>=3?1:0)+gameState.shopSize;
+  spawnQueue=Math.min(6,n); bizTicks=0; pendingAdvance=false;
+  dayStats={visitors:0,sold:0,income:0,profit:0,events:[]};
+  dayRunning=true;
+  news("☀️ "+dayLabel+" の営業をはじめました");
+  renderTop();
+}
+function advanceDate(){
+  gameState.days++; gameState.d++;
+  if(gameState.d>daysInMonth(gameState.y,gameState.m)){
+    gameState.d=1; gameState.m++;
+    if(gameState.m>12){gameState.m=1; gameState.y++;}
+    news("📅 "+gameState.y+"年"+gameState.m+"月になりました");
+  }
+  if(curPanel==="buy")marketDirty=true; else refreshMarket();
+}
+function endBusinessDay(){
+  dayRunning=false; pendingAdvance=false;
+  advanceDate();
+  gameState.money-=DAILY_COST;
+  const st=dayStats||{visitors:0,sold:0,income:0,profit:0,events:[]};
+  let ev=st.events.slice(0,6).map(function(e){return "<div class='moneyrow'><span>"+e+"</span></div>";}).join("");
+  if(!ev)ev="<div class='moneyrow'><span>👀 お客さんは見に来ただけでした…。値段と状態を見直してみよう</span></div>";
+  if(displayedCars().length===0)ev+="<div class='moneyrow'><span>⚠️ 展示する車がありません。「仕入れ」で車を増やそう</span></div>";
+  $("reportBody").innerHTML=
+    "<p style='text-align:center;font-size:17px'><b>"+dayLabel+"</b> の結果</p>"+
+    "<div class='moneyrow'><span>👥 来てくれたお客さん</span><span class='v'>"+st.visitors+"人</span></div>"+
+    "<div class='moneyrow'><span>🎉 売れた車</span><span class='v'>"+st.sold+"台</span></div>"+
+    "<div class='moneyrow'><span>💰 売上</span><span class='v'>"+man(st.income)+"</span></div>"+
+    "<div class='moneyrow'><span>📈 粗利（売上 − 仕入値）</span><span class='v' style='color:"+(st.profit>=0?"#1d7a3a":"#b03030")+"'>"+(st.profit>=0?"+":"")+man(st.profit)+"</span></div>"+
+    "<div class='moneyrow'><span>🏠 店の維持費</span><span class='v'>−"+man(DAILY_COST)+"</span></div>"+
+    "<div class='moneyrow'><span>🏦 今のお金</span><span class='v'>"+man(gameState.money)+"</span></div>"+
+    "<h3 style='margin:12px 0 6px'>今日のできごと</h3>"+ev+
+    (gameState.money<CONFIG.baitoMoneyLine?"<p class='note'>お金がピンチ…「店を大きく」の画面の 🧽 洗車バイト で立て直そう。</p>":"");
+  openModal("reportModal");
+  dayStats=null;
+  renderAll(); autoSave();
+}
+function closeReport(){ closeModal("reportModal"); renderAll(); }
+function ambientTick(){
+  tickRoad(); tickFigs();
+  floats.forEach(function(fl){fl.y-=0.7;fl.life--;});
+}
+function showroomPanel(){
+  let h="<div class='panel'><h2>🏠 展示場</h2>"+
+  "<p class='note'>お金 "+man(Math.max(0,gameState.money))+" ／ 展示中 "+gameState.cars.length+"台（"+spotCount()+"台まで）<br>洗車・整備で状態を上げ、値段を決めたら「▶ 営業開始」でお客さんを呼ぼう</p>";
+  if(!gameState.cars.length){
+    h+="<p>展示する車がありません。</p><div class='row'><button class='primary' style='min-height:52px' onclick='showPanel(\"buy\")'>🚗 仕入れに行く</button></div>";
+  }
+  gameState.cars.forEach(function(c){
+    const price=Math.min(Math.round(c.market*1.5/10000)*10000, Math.max(Math.round(c.market*0.6/10000)*10000, carPrice(c)));
+    const fair=fairValue(c), ap=appealOf(c), profit=carPrice(c)-(c.buyPrice||0);
+    const minP=Math.max(10000,Math.round(c.market*0.6/10000)*10000), maxP=Math.round(c.market*1.5/10000)*10000;
+    h+="<div class='card'>"+carImgHtml(c)+"<h3>"+c.maker+" "+c.name+"<span class='badge'>"+c.type+"</span></h3>"+
+    specHtml(c)+
+    "<div style='margin:8px 0 2px' class='specrow'><span class='spec'>状態 <b>"+COND_WORD[c.cond]+"</b></span></div>"+
+    "<div class='hpbar'><i style='width:"+((c.cond+1)*33)+"%'></i></div>"+
+    "<div class='moneyrow'><span>仕入値</span><span class='v'>"+man(c.buyPrice||0)+"</span></div>"+
+    "<div class='moneyrow'><span>相場（目安）</span><span class='v'>"+man(c.market)+"</span></div>"+
+    "<div class='row' style='gap:8px;margin:10px 0'>"+
+      "<button class='good' style='flex:1;min-height:52px' onclick='doClean("+c.id+")' "+(c.cond>=2||gameState.money<10000?"disabled":"")+">🧼 洗車<br><span class='small'>1万円・状態アップ</span></button>"+
+      "<button class='good' style='flex:1;min-height:52px' onclick='doRepair("+c.id+")' "+(c.cond>=2||gameState.money<30000?"disabled":"")+">🔧 整備<br><span class='small'>3万円・ピカピカに</span></button>"+
+    "</div>"+
+    "<div class='pricebox'>"+
+      "<div class='moneyrow'><span>売値</span><span class='v' id='pv-"+c.id+"' style='font-size:19px;color:#2456a6'>"+man(price)+"</span></div>"+
+      "<div class='moneyrow'><span id='pf-"+c.id+"' style='font-weight:700;color:"+(profit>=0?"#1d7a3a":"#b03030")+"'>予想粗利 "+(profit>=0?"+":"")+man(profit)+"</span><span class='badge' id='ap-"+c.id+"' style='background:"+ap.bg+";color:"+ap.fg+"'>"+ap.label+"</span></div>"+
+      "<input type='range' min='"+minP+"' max='"+maxP+"' step='10000' value='"+price+"' oninput='updatePricePreview("+c.id+",this.value)' onchange='setSellPrice("+c.id+",this.value)' style='width:100%'>"+
+      "<div class='specrow'><span class='spec'>安い ←</span><span class='spec'>適正 "+man(fair)+"</span><span class='spec'>→ 高い</span></div>"+
+    "</div></div>";
+  });
+  return h+"</div>";
+}
+function growPanel(){
+  const uts=unlockedTypes(),nu=nextUnlock();
+  const specialty=uts.length===1?"軽自動車専門店":(uts.length>=TYPES.length?"全車種のお店":"取扱車種 拡大中");
+  const nx=SHOP_SIZES[gameState.shopSize+1];
+  let h="<div class='panel'><h2>📈 "+esc(gameState.shopName)+" を大きく</h2>"+
+  "<div class='moneyrow'><span>🏪 お店の種類</span><span class='v'>"+specialty+"</span></div>"+
+  "<div class='moneyrow'><span>🚗 扱える車</span><span class='v'>"+uts.join("・")+"</span></div>"+
+  (nu?"<div class='moneyrow'><span>🎯 次の目標</span><span class='v'>あと "+(nu.sold-gameState.sold)+"台 売ると「"+nu.types.join("・")+"」が扱える</span></div>"
+     :"<div class='moneyrow'><span>🎯 次の目標</span><span class='v'>全車種 解禁済み！🎉</span></div>")+
+  "<div class='moneyrow'><span>🚙 展示できる車</span><span class='v'>"+spotCount()+"台まで</span></div>";
+  if(nx){
+    h+="<div class='card'><h3>🏢 店を大きくする</h3><p class='note'>次は「"+nx.name+"」：展示 "+nx.cap+"台まで ／ "+man(nx.cost*10000)+"</p>"+
+    "<div class='row'><button class='good' style='min-height:52px' onclick='growShop()' "+(gameState.money<nx.cost*10000?"disabled":"")+">📈 大きくする（"+man(nx.cost*10000)+"）</button></div></div>";
+  } else h+="<p class='note'>お店は最大の大きさです🎉</p>";
+  if(gameState.money<CONFIG.baitoMoneyLine){
+    h+="<div class='row' style='margin-top:10px'><button class='good' style='min-height:52px' onclick='doBaito()' "+(gameState.lastBaitoDay===gameState.days?"disabled":"")+">🧽 洗車バイトに行く（+"+man(CONFIG.baitoPay)+"・1日1回）</button></div>";
+  }
+  h+="<div class='row' style='margin-top:10px'><button onclick='renameShop()'>✏️ 店の名前を変える</button>"+
+  "<button onclick='backToTitle()'>🏠 タイトルにもどる</button></div>"+
+  "<p class='note'>遊び方： 仕入れ → 展示場で洗車・整備と値段決め → 「▶ 営業開始」で1日営業 → 日報で粗利をチェック。売れた台数が増えると、扱える車と店の大きさが広がるよ。</p></div>";
+  return h;
 }
 
 /* ================================================================
@@ -1832,11 +1795,15 @@ function enterGame(){
 function backToTitle(){autoSave();showTitle();}
 
 /* ================= メインループ（描画と時間進行を分離） ================= */
-let _lastT=0,_acc=0;
+let _lastT=0,_acc=0,_amb=0;
 function logicTick(){
   if(!gameState)return;
-  dayCarry++;
-  if(dayCarry>=CONFIG.ticksPerDay){dayCarry=0;nextDay();}
+  if(dayRunning){
+    bizTicks++; dayCarry++;
+    if(spawnQueue>0 && bizTicks%20===0){ spawnCustomer(); spawnQueue--; if(dayStats)dayStats.visitors++; }
+    if(dayCarry>=CONFIG.ticksPerDay){ dayCarry=0; pendingAdvance=true; }
+    if(pendingAdvance && spawnQueue===0 && visitors.length===0){ endBusinessDay(); }
+  }
   tickCustomers();
   tickFigs();
   tickPit();
@@ -1848,10 +1815,11 @@ function frameLoop(ts){
   if(!_lastT)_lastT=ts;
   const dt=Math.min(250,ts-_lastT);_lastT=ts;
   if(!gameState||$("gameScreen").classList.contains("hidden"))return;
-  _acc+=dt/CONFIG.tickMs*(gameState.speed||0);
+  _acc+=dt/CONFIG.tickMs*(dayRunning?2:0);
   let n=0;
   while(_acc>=1&&n<14){logicTick();_acc--;n++;}
   if(_acc>14)_acc=0;
+  if(!dayRunning){_amb++;if(_amb%6===0)ambientTick();}
   drawScene();
 }
 requestAnimationFrame(frameLoop);
