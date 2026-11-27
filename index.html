@@ -494,6 +494,11 @@ function serveCustomer(cu){
 function removeVisitor(id){visitors=visitors.filter(v=>v.id!==id);peopleDirty();}
 
 /* ================= サイコロバトル ================= */
+function bestStaff(){
+  let best={name:"社長（あなた）",rank:bossRank()};
+  S.staff.forEach(s=>{if(RANKS.indexOf(s.rank)>RANKS.indexOf(best.rank))best={name:s.name,rank:s.rank};});
+  return best;
+}
 function diceOdds(rank){
   const w=DICE_W[rank]||DICE_W.F;
   const tot=w.reduce(function(a,b){return a+b;},0);
