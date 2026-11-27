@@ -197,12 +197,12 @@ const SAVE_KEYS=["ponpoko_usedcar_slot1","ponpoko_usedcar_slot2","ponpoko_usedca
 /* ================= データ ================= */
 const TYPES=["軽","コンパクト","セダン","SUV","ミニバン","スポーツ"];
 const MODELS={
-  "軽":[["ホンダ","N-BOX",150],["ダイハツ","タント",140],["スズキ","ハスラー",135],["ダイハツ","ムーヴ",110],["スズキ","ワゴンR",100]],
-  "コンパクト":[["トヨタ","ヤリス",170],["ホンダ","フィット",160],["日産","ノート",155],["スズキ","スイフト",150]],
-  "セダン":[["トヨタ","プリウス",240],["トヨタ","カローラ",210],["ホンダ","アコード",260],["マツダ","MAZDA3",200]],
-  "SUV":[["スバル","フォレスター",280],["トヨタ","RAV4",300],["ホンダ","ヴェゼル",240],["マツダ","CX-5",260]],
-  "ミニバン":[["ホンダ","ステップワゴン",290],["トヨタ","ノア",280],["日産","セレナ",270],["ホンダ","フリード",230]],
-  "スポーツ":[["トヨタ","GR86",320],["マツダ","ロードスター",260],["スバル","BRZ",310],["日産","フェアレディZ",450]]
+  "軽":[["ホンダ","N-BOX",150],["ダイハツ","タント",140],["スズキ","ハスラー",135],["ダイハツ","ムーヴ",110],["スズキ","ワゴンR",100],["ホンダ","N-ONE",130],["スズキ","スペーシア",140],["スズキ","ジムニー",180],["ダイハツ","タフト",150],["日産","デイズ",100],["ホンダ","N-WGN",120],["ダイハツ","キャスト",120],["スズキ","アルト",80],["スズキ","エブリイ",110],["ダイハツ","ハイゼットカーゴ",100],["三菱","eKワゴン",90],["日産","ルークス",140],["ダイハツ","ムーヴキャンバス",130],["ホンダ","N-VAN",150],["三菱","デリカミニ",160],["ダイハツ","ミライース",90]],
+  "コンパクト":[["トヨタ","ヤリス",170],["ホンダ","フィット",160],["日産","ノート",155],["スズキ","スイフト",150],["トヨタ","アクア",150],["トヨタ","ルーミー",160],["スズキ","ソリオ",140],["ダイハツ","パッソ",110]],
+  "セダン":[["トヨタ","プリウス",240],["トヨタ","カローラ",210],["ホンダ","アコード",260],["マツダ","MAZDA3",200],["トヨタ","クラウン",380],["トヨタ","カムリ",280],["日産","スカイライン",320],["トヨタ","マークX",180]],
+  "SUV":[["スバル","フォレスター",280],["トヨタ","RAV4",300],["ホンダ","ヴェゼル",240],["マツダ","CX-5",260],["トヨタ","ハリアー",320],["日産","エクストレイル",260],["トヨタ","ランドクルーザー",550],["トヨタ","C-HR",230]],
+  "ミニバン":[["ホンダ","ステップワゴン",290],["トヨタ","ノア",280],["日産","セレナ",270],["ホンダ","フリード",230],["トヨタ","アルファード",450],["トヨタ","ヴォクシー",300],["ホンダ","オデッセイ",280],["三菱","デリカD:5",330]],
+  "スポーツ":[["トヨタ","GR86",320],["マツダ","ロードスター",260],["スバル","BRZ",310],["日産","フェアレディZ",450],["トヨタ","スープラ",550],["日産","GT-R",1200],["ホンダ","シビック TYPE R",480],["スバル","WRX",350]]
 };
 const COLORS=["レッド","ブルー","ホワイト","ブラック","シルバー","イエロー","グリーン","オレンジ","パープル","ベージュ"];
 const CAR_PAINT={"レッド":"#e5533d","ブルー":"#3d7de0","ホワイト":"#f4f6f8","ブラック":"#3a3f4a","シルバー":"#c9ced6","イエロー":"#f2c230","グリーン":"#57b368","オレンジ":"#f08a2e","パープル":"#9a6ad8","ベージュ":"#e3d3ae"};
@@ -1097,11 +1097,32 @@ function drawPerson(g,x,y,p){
   }
 }
 
-/* ================= カード用・車の絵（正面寄り3/4・実車風イラスト） ================= */
+/* ================= カード用・車の絵（実車写真を絵にしたイラスト＋色替え） ================= */
+const CAR_SLUG={"N-BOX":"nbox","タント":"tanto","ハスラー":"hustler","ムーヴ":"move","ワゴンR":"wagonr","N-ONE":"none","スペーシア":"spacia","ジムニー":"jimny","タフト":"taft","デイズ":"dayz","N-WGN":"nwgn","キャスト":"cast","アルト":"alto","エブリイ":"every","ハイゼットカーゴ":"hijet","eKワゴン":"ekwagon","ルークス":"roox","ムーヴキャンバス":"canbus","N-VAN":"nvan","デリカミニ":"delicamini","ミライース":"miraes","ヤリス":"yaris","フィット":"fit","ノート":"note","スイフト":"swift","アクア":"aqua","ルーミー":"roomy","ソリオ":"solio","パッソ":"passo","プリウス":"prius","カローラ":"corolla","アコード":"accord","MAZDA3":"mazda3","クラウン":"crown","カムリ":"camry","スカイライン":"skyline","マークX":"markx","フォレスター":"forester","RAV4":"rav4","ヴェゼル":"vezel","CX-5":"cx5","ハリアー":"harrier","エクストレイル":"xtrail","ランドクルーザー":"landcruiser","C-HR":"chr","ステップワゴン":"stepwgn","ノア":"noah","セレナ":"serena","フリード":"freed","アルファード":"alphard","ヴォクシー":"voxy","オデッセイ":"odyssey","デリカD:5":"delica","GR86":"gr86","ロードスター":"roadster","BRZ":"brz","フェアレディZ":"fairladyz","スープラ":"supra","GT-R":"gtr","シビック TYPE R":"civictyper","WRX":"wrx"};
 const _carImgCache={};
+const _carImgBusy={};
 function carImgURL(car){
   if(!car)return "";
   const key=car.name+"|"+car.color+"|"+car.cond;
+  if(_carImgCache[key]!==undefined)return _carImgCache[key];
+  const slug=CAR_SLUG[car.name];
+  if(!slug)return vectorCarURL(car);
+  if(!_carImgBusy[key]){
+    _carImgBusy[key]=1;
+    const im=new Image();
+    im.onload=function(){
+      let url="";
+      try{url=recolorCarImage(im,car);}catch(e){url="";}
+      _carImgCache[key]=url||("cars/"+slug+".webp");
+      if(S){renderPanel();if(B&&B.carId===car.id&&typeof renderBattle==="function")renderBattle();}
+    };
+    im.onerror=function(){_carImgCache[key]=vectorCarURL(car);if(S)renderPanel();};
+    im.src="cars/"+slug+".webp";
+  }
+  return "cars/"+slug+".webp"; /* 読み込み中は元の色のイラストを出す */
+}
+function vectorCarURL(car){
+  const key="vec|"+car.name+"|"+car.color+"|"+car.cond;
   if(_carImgCache[key]!==undefined)return _carImgCache[key];
   let url="";
   try{
@@ -1111,6 +1132,109 @@ function carImgURL(car){
   }catch(e){url="";}
   _carImgCache[key]=url;
   return url;
+}
+/* --- 色の変換ヘルパー --- */
+function rgbToHsl(r,g,b){
+  r/=255;g/=255;b/=255;
+  const mx=Math.max(r,g,b),mn=Math.min(r,g,b);let h=0,s=0;const l=(mx+mn)/2;
+  if(mx!==mn){const d=mx-mn;s=l>0.5?d/(2-mx-mn):d/(mx+mn);
+    if(mx===r)h=(g-b)/d+(g<b?6:0);else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;}
+  return [h,s,l];
+}
+function hslToRgb(h,s,l){
+  h=((h%360)+360)%360/360;
+  const q=l<0.5?l*(1+s):l+s-l*s,p=2*l-q;
+  function f(t){if(t<0)t+=1;if(t>1)t-=1;
+    if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;}
+  if(s===0){const v=Math.round(l*255);return [v,v,v];}
+  return [Math.round(f(h+1/3)*255),Math.round(f(h)*255),Math.round(f(h-1/3)*255)];
+}
+function hexToHsl(hex){
+  const n=parseInt(hex.slice(1),16);
+  return rgbToHsl((n>>16)&255,(n>>8)&255,n&255);
+}
+/* 元の写真が白・銀・黒の車のとき: 背景との差で車体を見つけて色を付ける */
+function recolorAchromatic(g,W,H,target){
+  const img=g.getImageData(0,0,W,H),d=img.data;
+  function px(x,y){const i=(y*W+x)*4;return [d[i],d[i+1],d[i+2]];}
+  const cs=[px(2,2),px(W-3,2),px(2,H-3),px(W-3,H-3)];
+  const bg=[0,1,2].map(function(k){return Math.round(cs.reduce(function(a,c){return a+c[k];},0)/4);});
+  for(let i=0,p=0;i<d.length;i+=4,p++){
+    const dr=d[i]-bg[0],dg=d[i+1]-bg[1],db=d[i+2]-bg[2];
+    if(dr*dr+dg*dg+db*db<32*32)continue; /* 背景はそのまま */
+    const hsl=rgbToHsl(d[i],d[i+1],d[i+2]);
+    if(hsl[2]<0.13)continue; /* タイヤなどの真っ暗な部分は残す */
+    const glass=(hsl[2]<0.45&&hsl[0]>180&&hsl[0]<250&&hsl[1]<0.4)?0.3:1;
+    let nh,ns,nl;
+    if(target[1]<0.12){ns=Math.min(hsl[1],0.07);nl=hsl[2]+(target[2]-0.62)*0.7;nh=target[0];}
+    else{nh=target[0];ns=Math.max(hsl[1],target[1]*0.75*glass);nl=hsl[2];}
+    const rgb=hslToRgb(nh,ns,Math.max(0.04,Math.min(0.96,nl)));
+    d[i]=rgb[0];d[i+1]=rgb[1];d[i+2]=rgb[2];
+  }
+  g.putImageData(img,0,0);
+}
+/* イラストの中で一番多い「はっきりした色」をボディ色として見つける */
+function sampleBasePaint(g,w,h){
+  const img=g.getImageData(0,0,w,h).data;
+  const bins={};
+  for(let i=0;i<img.length;i+=16){
+    const hsl=rgbToHsl(img[i],img[i+1],img[i+2]);
+    if(hsl[1]>0.28&&hsl[2]>0.14&&hsl[2]<0.86){
+      const bin=Math.floor(hsl[0]/15);
+      if(!bins[bin])bins[bin]={n:0,h:0,s:0,l:0};
+      const B=bins[bin];B.n++;B.h+=hsl[0];B.s+=hsl[1];B.l+=hsl[2];
+    }
+  }
+  let best=null;
+  for(const k in bins){if(!best||bins[k].n>best.n)best=bins[k];}
+  if(!best||best.n<30)return null;
+  return [best.h/best.n,best.s/best.n,best.l/best.n];
+}
+/* 写真イラストのボディ色を、車の色に付け替える */
+function recolorCarImage(im,car){
+  const W=520,H=Math.max(200,Math.round(W*im.height/im.width));
+  const cv=document.createElement("canvas");cv.width=W;cv.height=H;
+  const g=cv.getContext("2d");if(!g)return "";
+  g.drawImage(im,0,0,W,H);
+  const base=sampleBasePaint(g,W,H);
+  const target=hexToHsl(CAR_PAINT[car.color]||"#c0c0c0");
+  if(base){
+    const img=g.getImageData(0,0,W,H),d=img.data;
+    const achro=target[1]<0.12; /* 白・黒・銀は色みなし */
+    for(let i=0;i<d.length;i+=4){
+      const hsl=rgbToHsl(d[i],d[i+1],d[i+2]);
+      let dh=hsl[0]-base[0];if(dh>180)dh-=360;if(dh<-180)dh+=360;
+      if(Math.abs(dh)<24&&hsl[1]>0.24&&hsl[2]>0.10&&hsl[2]<0.94){
+        let nh,ns,nl;
+        if(achro){
+          ns=Math.min(hsl[1],0.07);
+          nl=hsl[2]+(target[2]-base[2]);
+          nh=target[0];
+        }else{
+          nh=target[0]+dh*0.5;
+          ns=Math.max(0.08,Math.min(1,hsl[1]*(target[1]/Math.max(base[1],0.2))));
+          nl=hsl[2]*Math.pow(target[2]/Math.max(base[2],0.15),0.6);
+        }
+        const rgb=hslToRgb(nh,ns,Math.max(0.04,Math.min(0.96,nl)));
+        d[i]=rgb[0];d[i+1]=rgb[1];d[i+2]=rgb[2];
+      }
+    }
+    g.putImageData(img,0,0);
+  }
+  if(!base)recolorAchromatic(g,W,H,target);
+  /* 状態の表現：いまいち=汚れ、ピカピカ=キラキラ */
+  if(car.cond===0){
+    g.fillStyle="rgba(105,84,50,.28)";
+    let seed=car.id*7919;
+    function rnd2(){seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff;}
+    for(let i=0;i<7;i++){
+      const x=W*(0.15+rnd2()*0.7),y=H*(0.45+rnd2()*0.4),r=8+rnd2()*20;
+      g.beginPath();g.ellipse(x,y,r,r*0.55,0,0,7);g.fill();
+    }
+  }else if(car.cond===2){
+    spark(g,W*0.25,H*0.3,13);spark(g,W*0.62,H*0.2,10);spark(g,W*0.8,H*0.45,12);spark(g,W*0.45,H*0.55,9);
+  }
+  return cv.toDataURL("image/jpeg",0.85);
 }
 function carImgHtml(car,big){
   const u=carImgURL(car);
