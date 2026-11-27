@@ -196,6 +196,17 @@ const SAVE_KEYS=["ponpoko_usedcar_slot1","ponpoko_usedcar_slot2","ponpoko_usedca
 
 /* ================= データ ================= */
 const TYPES=["軽","コンパクト","セダン","SUV","ミニバン","スポーツ"];
+/* 扱える車の解禁（売った台数で広がる）。最初は軽自動車専門店 */
+const UNLOCKS=[{sold:0,types:["軽"]},{sold:10,types:["コンパクト"]},{sold:25,types:["セダン","SUV"]},{sold:45,types:["ミニバン"]},{sold:70,types:["スポーツ"]}];
+function unlockedTypes(){
+  const t=[];
+  UNLOCKS.forEach(function(u){if((S?S.sold:0)>=u.sold)u.types.forEach(function(x){if(!t.includes(x))t.push(x);});});
+  return t;
+}
+function nextUnlock(){
+  for(let i=0;i<UNLOCKS.length;i++){if((S?S.sold:0)<UNLOCKS[i].sold)return UNLOCKS[i];}
+  return null;
+}
 const MODELS={
   "軽":[["ホンダ","N-BOX",150],["ダイハツ","タント",140],["スズキ","ハスラー",135],["ダイハツ","ムーヴ",110],["スズキ","ワゴンR",100],["ホンダ","N-ONE",130],["スズキ","スペーシア",140],["スズキ","ジムニー",180],["ダイハツ","タフト",150],["日産","デイズ",100],["ホンダ","N-WGN",120],["ダイハツ","キャスト",120],["スズキ","アルト",80],["スズキ","エブリイ",110],["ダイハツ","ハイゼットカーゴ",100],["三菱","eKワゴン",90],["日産","ルークス",140],["ダイハツ","ムーヴキャンバス",130],["ホンダ","N-VAN",150],["三菱","デリカミニ",160],["ダイハツ","ミライース",90]],
   "コンパクト":[["トヨタ","ヤリス",170],["ホンダ","フィット",160],["日産","ノート",155],["スズキ","スイフト",150],["トヨタ","アクア",150],["トヨタ","ルーミー",160],["スズキ","ソリオ",140],["ダイハツ","パッソ",110]],
@@ -269,6 +280,10 @@ function normalizeSave(o){
   const fixColor=function(c){if(c&&MODEL_COLOR[c.name])c.color=MODEL_COLOR[c.name];};
   (o.cars||[]).forEach(fixColor);
   (o.market||[]).forEach(fixColor);
+  /* 市場は「売った台数で扱える車種」だけにそろえる（軽専門店スタートへの移行） */
+  const allow=[];
+  UNLOCKS.forEach(function(u){if((o.sold||0)>=u.sold)u.types.forEach(function(x){if(!allow.includes(x))allow.push(x);});});
+  if(o.market)o.market=o.market.filter(function(c){return allow.includes(c.type);});
   return o;
 }
 
@@ -363,7 +378,7 @@ function renameShop(){
 <script>
 /* ================= 車を作る ================= */
 function genCar(){
-  const type=pick(TYPES);
+  const type=pick(unlockedTypes());
   const md=pick(MODELS[type]);
   const age=ri(0,8);
   const year=2026-age;
@@ -462,7 +477,7 @@ function ensurePlan(){
 
 /* ================= お客さん ================= */
 function genCustomer(){
-  return {id:S.nextId++,name:pick(LAST)+" "+pick(FIRST),wantType:pick(TYPES),
+  return {id:S.nextId++,name:pick(LAST)+" "+pick(FIRST),wantType:pick(unlockedTypes()),
     budget:Math.round(rnd(40,380))*10000,x:228,y:238,tx:200,ty:190,bubble:"",bubbleT:0,stay:0,served:false};
 }
 function spawnCustomer(){
@@ -555,6 +570,7 @@ function battleOk(){
 }
 function finishSale(car){
   const cu=B.cu,price=B.salePrice||B.price,dice=B.dice;
+  const typesBefore=unlockedTypes();
   B=null;closeModal("battleModal");
   S.money+=price;S.month.income+=price;S.month.sold++;
   S.sold++;
@@ -563,10 +579,15 @@ function finishSale(car){
   S.cars=S.cars.filter(c=>c.id!==car.id);
   news("🎉 "+cu.name+"さんが "+car.name+" を "+man(price)+" で買ってくれました！（サイコロ "+dice+"）");
   removeVisitor(cu.id);
+  const newTypes=unlockedTypes().filter(function(t){return !typesBefore.includes(t);});
+  let pop="";
   if(bossRank()!==oldRank){
-    $("popBody").innerHTML="<div class='rankpop'>🎊</div><p style='text-align:center;font-size:18px'><b>社長の営業ランクが上がった！</b><br>営業ランク <span class='rankbig' style='color:"+RANK_COLOR[bossRank()]+"'>"+bossRank()+"</span><br><span class='small'>サイコロで いい目が出やすくなったよ</span></p>";
-    openModal("popModal");
+    pop+="<div class='rankpop'>🎊</div><p style='text-align:center;font-size:18px'><b>社長の営業ランクが上がった！</b><br>営業ランク <span class='rankbig' style='color:"+RANK_COLOR[bossRank()]+"'>"+bossRank()+"</span><br><span class='small'>サイコロで いい目が出やすくなったよ</span></p>";
   }
+  if(newTypes.length){
+    pop+="<div class='rankpop'>🚀</div><p style='text-align:center;font-size:18px'><b>新しい車が扱えるようになった！</b><br><b>"+newTypes.join(" と ")+"</b> も仕入れられるよ<br><span class='small'>お店が どんどん大きくなっていくね</span></p>";
+  }
+  if(pop){$("popBody").innerHTML=pop;openModal("popModal");}
   renderAll();renderWait();autoSave();
 }
 function endBattle(msg){
@@ -777,7 +798,14 @@ function shopPanel(){
     "車を買って、キレイにして、並べておこう！<br>"+
     "🎉 オープンは <b>6月1日</b>（あと <b>"+daysToOpen()+"日</b>）</div>";
   }
+  const uts=unlockedTypes(),nu=nextUnlock();
+  const specialty=uts.length===1?"軽自動車専門店":(uts.length>=TYPES.length?"全車種のお店":"取扱車種 拡大中");
   return "<div class='panel'><h2>🏠 "+esc(S.shopName)+"</h2>"+top+
+  "<div class='moneyrow'><span>🏪 お店の種類</span><span class='v'>"+specialty+"</span></div>"+
+  "<div class='moneyrow'><span>🚗 扱える車</span><span class='v'>"+uts.join("・")+"</span></div>"+
+  (nu
+    ?"<div class='moneyrow'><span>🎯 次の目標</span><span class='v'>あと "+(nu.sold-S.sold)+"台 売ると「"+nu.types.join("・")+"」が扱える</span></div>"
+    :"<div class='moneyrow'><span>🎯 次の目標</span><span class='v'>全車種 解禁済み！🎉</span></div>")+
   "<div class='moneyrow'><span>🚙 置ける車</span><span class='v'>"+S.cars.length+"台 / "+SHOP_SIZES[S.shopSize].cap+"台まで</span></div>"+
   (isPrep()
     ?"<div class='moneyrow'><span>🚶 今月のお客さん</span><span class='v'>開業準備中なので まだ来ません</span></div>"
@@ -785,7 +813,7 @@ function shopPanel(){
   "<div class='moneyrow'><span>🤝 同時に相手できるお客さん</span><span class='v'>"+serveCap()+"人</span></div>"+
   "<div class='row' style='margin-top:10px'><button onclick='renameShop()'>✏️ 店の名前を変える</button>"+
   "<button onclick='backToTitle()'>🏠 タイトルにもどる</button></div>"+
-  "<p class='note'>遊び方: 車を買う → キレイにする → お客さんが来たらサイコロをふって売る。それだけ！</p></div>";
+  "<p class='note'>遊び方: 車を買う → キレイにする → お客さんが来たらサイコロをふって売る。それだけ！ 最初は軽自動車専門店。売れば売るほど扱える車が広がるよ</p></div>";
 }
 function specHtml(c){
   return "<div class='specrow'><span class='spec'>年式 <b>"+c.year+"年</b></span>"+
@@ -794,7 +822,7 @@ function specHtml(c){
 }
 function buyPanel(){
   let h="<div class='panel'><h2>🚗 車を買う</h2>"+
-  "<p class='note'>お金 "+man(Math.max(0,S.money))+" ／ 置ける車 あと "+(SHOP_SIZES[S.shopSize].cap-S.cars.length)+"台（毎日 新しい車が並びます）</p>";
+  "<p class='note'>お金 "+man(Math.max(0,S.money))+" ／ 置ける車 あと "+(SHOP_SIZES[S.shopSize].cap-S.cars.length)+"台（毎日 新しい車が並びます）<br>今 扱えるのは <b>"+unlockedTypes().join("・")+"</b> だけ。売った台数が増えると広がります</p>";
   if(!S.market.length)h+="<p>今日の車は売り切れです。明日を待ちましょう。</p>";
   S.market.forEach(c=>{
     h+="<div class='card'>"+carImgHtml(c)+"<h3>"+c.maker+" "+c.name+"<span class='badge'>"+c.type+"</span><span class='badge st"+c.cond+"'>状態: "+COND_WORD[c.cond]+"</span></h3>"+
