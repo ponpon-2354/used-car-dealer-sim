@@ -139,7 +139,7 @@ canvas#cv{display:block;width:100%;aspect-ratio:480/270}
 
 <!-- バトル -->
 <div class="modal" id="battleModal"><div class="mbox">
-  <h2>🤝 値段交渉バトル！</h2>
+  <h2>🎲 サイコロバトル！</h2>
   <div id="battleBody"></div>
 </div></div>
 
@@ -205,6 +205,8 @@ const MODELS={
   "スポーツ":[["トヨタ","GR86",320],["マツダ","ロードスター",260],["スバル","BRZ",310],["日産","フェアレディZ",450],["トヨタ","スープラ",550],["日産","GT-R",1200],["ホンダ","シビック TYPE R",480],["スバル","WRX",350]]
 };
 const COLORS=["レッド","ブルー","ホワイト","ブラック","シルバー","イエロー","グリーン","オレンジ","パープル","ベージュ"];
+/* 車種ごとの本当の色（写真イラストの色で固定。色違いはなし） */
+const MODEL_COLOR={"N-BOX":"ホワイト","タント":"ブルー","ハスラー":"オレンジ","ムーヴ":"ブルー","ワゴンR":"イエロー","N-ONE":"レッド","スペーシア":"ブルー","ジムニー":"イエロー","タフト":"オレンジ","デイズ":"オレンジ","N-WGN":"ホワイト","キャスト":"レッド","アルト":"レッド","エブリイ":"ホワイト","ハイゼットカーゴ":"ベージュ","eKワゴン":"パープル","ルークス":"レッド","ムーヴキャンバス":"グリーン","N-VAN":"シルバー","デリカミニ":"グリーン","ミライース":"イエロー","ヤリス":"レッド","フィット":"レッド","ノート":"ブルー","スイフト":"レッド","アクア":"ブルー","ルーミー":"レッド","ソリオ":"レッド","パッソ":"ベージュ","プリウス":"レッド","カローラ":"ホワイト","アコード":"レッド","MAZDA3":"レッド","クラウン":"シルバー","カムリ":"ホワイト","スカイライン":"ブルー","マークX":"ブラック","フォレスター":"グリーン","RAV4":"ホワイト","ヴェゼル":"レッド","CX-5":"レッド","ハリアー":"レッド","エクストレイル":"レッド","ランドクルーザー":"ベージュ","C-HR":"シルバー","ステップワゴン":"ブルー","ノア":"ホワイト","セレナ":"シルバー","フリード":"シルバー","アルファード":"ベージュ","ヴォクシー":"ブルー","オデッセイ":"ブルー","デリカD:5":"シルバー","GR86":"ブラック","ロードスター":"レッド","BRZ":"ブルー","フェアレディZ":"ブルー","スープラ":"シルバー","GT-R":"ブルー","シビック TYPE R":"ホワイト","WRX":"ブルー"};
 const CAR_PAINT={"レッド":"#e5533d","ブルー":"#3d7de0","ホワイト":"#f4f6f8","ブラック":"#3a3f4a","シルバー":"#c9ced6","イエロー":"#f2c230","グリーン":"#57b368","オレンジ":"#f08a2e","パープル":"#9a6ad8","ベージュ":"#e3d3ae"};
 const FIRST=["健太","美咲","翔太","結衣","大輔","恵子","直樹","千尋","浩二","誠","陽子","隆","さくら","悠真","葵","蓮"];
 const LAST=["佐藤","鈴木","高橋","田中","伊藤","渡辺","山本","中村","小林","加藤","吉田","松本"];
@@ -212,7 +214,9 @@ const STAFF_NAMES=["タロウ","ハナコ","ジロウ","ユキ","ケンジ","ミ
 const COND_WORD=["いまいち","ふつう","ピカピカ"];
 const RANKS=["F","E","D","C","B","A","S"];
 const RANK_COLOR={"F":"#9aa0a6","E":"#5b8def","D":"#3aa655","C":"#e0a400","B":"#f08a2e","A":"#e5533d","S":"#d4a017"};
-const RANK_DMG={"F":[8,12],"E":[12,16],"D":[16,21],"C":[21,27],"B":[27,34],"A":[34,42],"S":[42,55]};
+/* サイコロの出やすさ（1〜6の重み）。ランクが上がるほど いい目が出やすい */
+const DICE_W={"F":[1,1,1,1,1,1],"E":[7,7,9,9,9,9],"D":[1,1,2,2,2,2],"C":[2,2,9,9,9,9],"B":[0,0,1,1,1,1],"A":[0,0,2,2,3,3],"S":[0,0,1,1,4,4]};
+const DICE_FACE=["⚀","⚁","⚂","⚃","⚄","⚅"];
 const RANK_SALARY={"F":12,"E":15,"D":18,"C":22,"B":28,"A":36,"S":48}; /* 万円/月 */
 const BOSS_RANK_SALES=[0,3,8,15,25,40,60]; /* この台数売るとランクが上がる */
 const SHOP_SIZES=[
@@ -261,6 +265,10 @@ function normalizeSave(o){
   if(o.plan===undefined)o.plan=null;
   if(o.plan&&o.plan.spawned===undefined)o.plan.spawned=o.plan.days.filter(function(d){return d<o.d;}).length;
   if(o.opened===undefined)o.opened=(o.y*12+o.m)>=(2026*12+6);
+  /* 色は車種ごとの本当の色にそろえる（色違い廃止にともなう移行） */
+  const fixColor=function(c){if(c&&MODEL_COLOR[c.name])c.color=MODEL_COLOR[c.name];};
+  (o.cars||[]).forEach(fixColor);
+  (o.market||[]).forEach(fixColor);
   return o;
 }
 
@@ -363,7 +371,7 @@ function genCar(){
   const cond=pick([0,0,1,1,1,2]);
   let market=md[2]*10000*Math.pow(0.92,age)*(1-clamp(km/1000,0,120)/100*0.45)*(0.85+cond*0.12);
   market=Math.max(15*10000,Math.round(market/10000)*10000);
-  return {id:S.nextId++,maker:md[0],name:md[1],type:type,year:year,km:km,cond:cond,color:pick(COLORS),market:market,price:0,tier:"おすすめ"};
+  return {id:S.nextId++,maker:md[0],name:md[1],type:type,year:year,km:km,cond:cond,color:MODEL_COLOR[md[1]]||"ホワイト",market:market,price:0,tier:"おすすめ"};
 }
 function tierPrice(car){
   const r=car.tier==="安い"?0.95:(car.tier==="高い"?1.25:1.1);
@@ -485,85 +493,86 @@ function serveCustomer(cu){
 }
 function removeVisitor(id){visitors=visitors.filter(v=>v.id!==id);peopleDirty();}
 
-/* ================= 交渉バトル ================= */
-function bestStaff(){
-  let best={name:"社長（あなた）",rank:bossRank()};
-  S.staff.forEach(s=>{if(RANKS.indexOf(s.rank)>RANKS.indexOf(best.rank))best={name:s.name,rank:s.rank};});
-  return best;
+/* ================= サイコロバトル ================= */
+function diceOdds(rank){
+  const w=DICE_W[rank]||DICE_W.F;
+  const tot=w.reduce(function(a,b){return a+b;},0);
+  return {
+    no:Math.round((w[0]+w[1])/tot*100),
+    disc:Math.round((w[2]+w[3])/tot*100),
+    full:Math.round((w[4]+w[5])/tot*100)
+  };
+}
+function rollDice(rank){
+  const w=DICE_W[rank]||DICE_W.F;
+  const tot=w.reduce(function(a,b){return a+b;},0);
+  let r=Math.random()*tot;
+  for(let i=0;i<6;i++){r-=w[i];if(r<0)return i+1;}
+  return 6;
 }
 function startBattle(cu,car,match){
   const st=bestStaff();
-  const rIdx=RANKS.indexOf(st.rank);
-  let hp=100*(car.tier==="安い"?0.7:(car.tier==="高い"?1.35:1.0));
-  if(!match)hp*=1.2;
-  hp=Math.round(hp);
-  const startRate=0.80+rIdx*0.017;
   B={cu:cu,carId:car.id,match:match,staffName:st.name,rank:st.rank,
-     hp:hp,maxHp:hp,price:Math.round(car.price*startRate/10000)*10000,
-     cap:Math.round(car.price*1.05/10000)*10000,turn:0,
-     last:cu.name+"さんは "+car.name+" を見ています。おすすめして、値段を上げていこう！"};
+     price:car.price,phase:"ready",dice:0,salePrice:0,anim:null,
+     last:cu.name+"さんは "+car.name+" を見ています。サイコロをふって売れるか決めよう！"};
   if(S.tut===3){S.tut=-1;}
   openModal("battleModal");
   renderBattle();
 }
-function battleAct(kind){
-  if(!B)return;
+function battleRoll(){
+  if(!B||B.phase!=="ready")return;
   const car=S.cars.find(c=>c.id===B.carId);
-  if(!car){endBattle("車がなくなったので、交渉はおわりです");return;}
-  B.turn++;
-  const r=RANK_DMG[B.rank];
-  let dmg=0;
-  if(kind==="push"){
-    dmg=ri(r[0],r[1]);
-    B.last="🚗 おすすめした！ "+B.cu.name+"さんが乗り気になってきた";
-  }else if(kind==="discount"){
-    B.price=Math.max(Math.round(car.price*0.6/10000)*10000,Math.round(B.price*0.95/10000)*10000);
-    dmg=Math.round(ri(r[0],r[1])*1.8);
-    B.last="💴 少し値引きした。"+B.cu.name+"さんがニッコリした！";
-  }
-  if(dmg>0){
-    const before=B.hp;
-    B.hp=Math.max(0,B.hp-dmg);
-    if(B.hp<=0){B.price=B.cap;}
-    else{B.price=Math.min(B.cap,B.price+Math.round((B.cap-B.price)*(Math.min(dmg,before)/before)/10000)*10000);}
-  }
-  if(B.hp<=0){finishSale(car);return;}
-  /* お客さんの反撃（少し値下げしてくる） */
-  const rIdx=RANKS.indexOf(B.rank);
-  const cut=Math.round(B.price*(0.045-rIdx*0.005)/10000)*10000;
-  const floor=Math.round(car.price*0.6/10000)*10000;
-  if(cut>0&&B.price-cut>=floor){B.price-=cut;B.last+=" ／ 😤「もっと安くして」と言われた";}
-  if(B.turn>=8){
-    if(B.price<=B.cu.budget){B.last="⏰ 交渉おわり。"+man(B.price)+" なら買ってくれるそうです！";finishSale(car);}
-    else{endBattle("⏰ "+B.cu.name+"さんは、出せるお金が足りなくて買えませんでした");}
-    return;
-  }
+  if(!car){endBattle("車がなくなったので、バトルはおわりです");return;}
+  B.phase="rolling";
   renderBattle();
+  const face=rollDice(B.rank);
+  let n=0;
+  B.anim=setInterval(function(){
+    if(!B){return;}
+    B.dice=ri(1,6);
+    renderBattle();
+    n++;
+    if(n>=11){
+      clearInterval(B.anim);B.anim=null;
+      B.dice=face;B.phase="done";
+      if(face<=2){B.last="🎲 "+face+"… ざんねん！ "+B.cu.name+"さんは買ってくれませんでした";}
+      else if(face<=4){B.salePrice=Math.round(car.price*0.9/10000)*10000;B.last="🎲 "+face+"！ 値引きで売れた！（1割引きの "+man(B.salePrice)+"）";}
+      else{B.salePrice=car.price;B.last="🎲 "+face+"！ 店頭価格の "+man(B.salePrice)+" で売れた！";}
+      renderBattle();
+    }
+  },80);
+}
+function battleOk(){
+  if(!B||B.phase!=="done")return;
+  const car=S.cars.find(c=>c.id===B.carId);
+  if(B.dice>=3&&car){finishSale(car);}
+  else{endBattle(null);}
 }
 function finishSale(car){
-  const cu=B.cu,price=B.price;
+  const cu=B.cu,price=B.salePrice||B.price,dice=B.dice;
   B=null;closeModal("battleModal");
   S.money+=price;S.month.income+=price;S.month.sold++;
   S.sold++;
   const oldRank=bossRank();
   S.bossExp++;
   S.cars=S.cars.filter(c=>c.id!==car.id);
-  news("🎉 "+cu.name+"さんが "+car.name+" を "+man(price)+" で買ってくれました！");
+  news("🎉 "+cu.name+"さんが "+car.name+" を "+man(price)+" で買ってくれました！（サイコロ "+dice+"）");
   removeVisitor(cu.id);
   if(bossRank()!==oldRank){
-    $("popBody").innerHTML="<div class='rankpop'>🎊</div><p style='text-align:center;font-size:18px'><b>社長の営業ランクが上がった！</b><br>営業ランク <span class='rankbig' style='color:"+RANK_COLOR[bossRank()]+"'>"+bossRank()+"</span><br><span class='small'>おすすめが もっと効くようになったよ</span></p>";
+    $("popBody").innerHTML="<div class='rankpop'>🎊</div><p style='text-align:center;font-size:18px'><b>社長の営業ランクが上がった！</b><br>営業ランク <span class='rankbig' style='color:"+RANK_COLOR[bossRank()]+"'>"+bossRank()+"</span><br><span class='small'>サイコロで いい目が出やすくなったよ</span></p>";
     openModal("popModal");
   }
   renderAll();renderWait();autoSave();
 }
 function endBattle(msg){
   if(!B)return;
+  if(B.anim){clearInterval(B.anim);B.anim=null;}
   const cu=B.cu;B=null;closeModal("battleModal");
   if(msg)news(msg);
   removeVisitor(cu.id);
   renderAll();renderWait();
 }
-function quitBattle(){if(!B)return;news(B.cu.name+"さんとの交渉をやめました");endBattle(null);}
+function quitBattle(){if(!B||B.phase==="rolling")return;news(B.cu.name+"さんとのバトルをやめました");endBattle(null);}
 function startNextBattle(){
   if(B)return;
   while(waitQueue.length){
@@ -705,7 +714,7 @@ const TUT_TEXT=[
   "👋 はじめまして！ まず「🚗 車を買う」から 車を買おう！",
   "✨ いいね！ 次は「🚙 車」で、車をキレイにしよう！",
   "🏷️ 値段は「おすすめ」が付いているから そのままでOK！（変えたいときは 🚙 車 の画面で3つから選べるよ）",
-  "🚶 あとは お客さんが来るのを待とう。来たら交渉バトルだ！"
+  "🚶 あとは お客さんが来るのを待とう。来たらサイコロバトルだ！"
 ];
 function updateGuide(){
   const g=$("guide");
@@ -771,7 +780,7 @@ function shopPanel(){
   "<div class='moneyrow'><span>🤝 同時に相手できるお客さん</span><span class='v'>"+serveCap()+"人</span></div>"+
   "<div class='row' style='margin-top:10px'><button onclick='renameShop()'>✏️ 店の名前を変える</button>"+
   "<button onclick='backToTitle()'>🏠 タイトルにもどる</button></div>"+
-  "<p class='note'>遊び方: 車を買う → キレイにする → お客さんと交渉して売る。それだけ！</p></div>";
+  "<p class='note'>遊び方: 車を買う → キレイにする → お客さんが来たらサイコロをふって売る。それだけ！</p></div>";
 }
 function specHtml(c){
   return "<div class='specrow'><span class='spec'>年式 <b>"+c.year+"年</b></span>"+
@@ -850,24 +859,33 @@ function renderWait(){
   let h="";
   if(waitQueue.length){
     h="<div class='waitbox'><b>🚶 待っているお客さん "+waitQueue.length+"人</b>"+
-    "<div class='row' style='margin-top:6px'><button class='good' style='min-height:50px' "+(B?"disabled":"")+" onclick='startNextBattle()'>🤝 次のお客さんの交渉をはじめる</button></div></div>";
+    "<div class='row' style='margin-top:6px'><button class='good' style='min-height:50px' "+(B?"disabled":"")+" onclick='startNextBattle()'>🤝 次のお客さんとサイコロバトル</button></div></div>";
   }
   if(h!==_waitHtml){el.innerHTML=h;_waitHtml=h;}
 }
 function renderBattle(){
   if(!B)return;
   const car=S.cars.find(c=>c.id===B.carId);
-  $("battleBody").innerHTML=
-  "<div style='font-size:17px'>👤 <b>"+esc(B.cu.name)+"さん</b>　💰 出せるお金 〜"+man(B.cu.budget)+"</div>"+
+  const odds=diceOdds(B.rank);
+  let h="<div style='font-size:17px'>👤 <b>"+esc(B.cu.name)+"さん</b></div>"+
   "<div style='font-size:17px;margin-top:4px'>🚗 <b>"+(car?car.maker+" "+car.name:"")+"</b></div>"+
   (car?carImgHtml(car,true):"")+
   "<div style='margin-top:8px'>担当: <b>"+esc(B.staffName)+"</b>　営業ランク <span class='rankbig' style='color:"+RANK_COLOR[B.rank]+"'>"+B.rank+"</span></div>"+
-  "<div style='margin-top:6px'>お客さんの根性ゲージ<div class='hpbar'><i style='width:"+Math.round(B.hp/B.maxHp*100)+"%'></i></div></div>"+
-  "<div class='battle-price'>"+man(B.price)+"</div>"+
-  "<div id='battleLast'>"+esc(B.last)+"</div>"+
-  "<div class='row'><button class='good' style='min-height:56px;font-size:18px' onclick='battleAct(\"push\")'>🚗 おすすめする！</button></div>"+
-  "<div class='row' style='margin-top:8px'><button onclick='battleAct(\"discount\")'>💴 値引きする</button>"+
-  "<button class='danger' onclick='quitBattle()'>やめる</button></div>";
+  "<div class='battle-price'>"+man(B.price)+"</div>";
+  if(B.phase==="ready"){
+    h+="<div class='note' style='text-align:center'>🎲 1〜2： 売れない（"+odds.no+"%）<br>🎲 3〜4： 値引きで売れる（"+odds.disc+"%）<br>🎲 5〜6： 店頭価格で売れる（"+odds.full+"%）</div>"+
+    "<div id='battleLast'>"+esc(B.last)+"</div>"+
+    "<div class='row'><button class='good' style='min-height:56px;font-size:19px' onclick='battleRoll()'>🎲 サイコロをふる！</button></div>"+
+    "<div class='row' style='margin-top:8px'><button class='danger' onclick='quitBattle()'>やめる</button></div>";
+  }else if(B.phase==="rolling"){
+    h+="<div style='text-align:center;font-size:74px;line-height:1.15'>"+DICE_FACE[B.dice-1]+"</div>"+
+    "<div id='battleLast' style='text-align:center'>ころころ…</div>";
+  }else{
+    h+="<div style='text-align:center;font-size:74px;line-height:1.15'>"+DICE_FACE[B.dice-1]+"</div>"+
+    "<div id='battleLast' style='text-align:center;font-size:17px'>"+esc(B.last)+"</div>"+
+    "<div class='row'><button class='good' style='min-height:56px;font-size:19px' onclick='battleOk()'>OK</button></div>";
+  }
+  $("battleBody").innerHTML=h;
 }
 
 /* ================= 人の動き ================= */
@@ -1101,41 +1119,27 @@ function drawPerson(g,x,y,p){
 const CAR_SLUG={"N-BOX":"nbox","タント":"tanto","ハスラー":"hustler","ムーヴ":"move","ワゴンR":"wagonr","N-ONE":"none","スペーシア":"spacia","ジムニー":"jimny","タフト":"taft","デイズ":"dayz","N-WGN":"nwgn","キャスト":"cast","アルト":"alto","エブリイ":"every","ハイゼットカーゴ":"hijet","eKワゴン":"ekwagon","ルークス":"roox","ムーヴキャンバス":"canbus","N-VAN":"nvan","デリカミニ":"delicamini","ミライース":"miraes","ヤリス":"yaris","フィット":"fit","ノート":"note","スイフト":"swift","アクア":"aqua","ルーミー":"roomy","ソリオ":"solio","パッソ":"passo","プリウス":"prius","カローラ":"corolla","アコード":"accord","MAZDA3":"mazda3","クラウン":"crown","カムリ":"camry","スカイライン":"skyline","マークX":"markx","フォレスター":"forester","RAV4":"rav4","ヴェゼル":"vezel","CX-5":"cx5","ハリアー":"harrier","エクストレイル":"xtrail","ランドクルーザー":"landcruiser","C-HR":"chr","ステップワゴン":"stepwgn","ノア":"noah","セレナ":"serena","フリード":"freed","アルファード":"alphard","ヴォクシー":"voxy","オデッセイ":"odyssey","デリカD:5":"delica","GR86":"gr86","ロードスター":"roadster","BRZ":"brz","フェアレディZ":"fairladyz","スープラ":"supra","GT-R":"gtr","シビック TYPE R":"civictyper","WRX":"wrx"};
 const _carImgCache={};
 const _carImgBusy={};
-const MASK_TILE={"accord":0,"alphard":1,"alto":2,"aqua":3,"brz":4,"camry":5,"canbus":6,"cast":7,"chr":8,"civictyper":9,"corolla":10,"crown":11,"cx5":12,"dayz":13,"delica":14,"delicamini":15,"ekwagon":16,"every":17,"fairladyz":18,"fit":19,"forester":20,"freed":21,"gr86":22,"gtr":23,"harrier":24,"hijet":25,"hustler":26,"jimny":27,"landcruiser":28,"markx":29,"mazda3":30,"miraes":31,"move":32,"nbox":33,"noah":34,"none":35,"note":36,"nvan":37,"nwgn":38,"odyssey":39,"passo":40,"prius":41,"rav4":42,"roadster":43,"roomy":44,"roox":45,"serena":46,"skyline":47,"solio":48,"spacia":49,"stepwgn":50,"supra":51,"swift":52,"taft":53,"tanto":54,"vezel":55,"voxy":56,"wagonr":57,"wrx":58,"xtrail":59,"yaris":60};
-/* ボディ部分だけを白く塗った「型紙」画像（全車種分を1枚にまとめたもの） */
-let _maskImg=null,_maskState=0; /* 0=未読込 1=読込中 2=準備OK 3=失敗 */
-const _maskWaiters=[];
-function loadMaskAtlas(){
-  if(_maskState!==0)return;
-  _maskState=1;
-  const im=new Image();
-  im.onload=function(){_maskImg=im;_maskState=2;const ws=_maskWaiters.splice(0);ws.forEach(function(f){try{f();}catch(e){}});};
-  im.onerror=function(){_maskState=3;const ws=_maskWaiters.splice(0);ws.forEach(function(f){try{f();}catch(e){}});};
-  im.src="cars/mask-atlas.webp";
-}
-function whenMaskReady(f){if(_maskState===2||_maskState===3)f();else _maskWaiters.push(f);}
-loadMaskAtlas();
+/* 車の絵は写真イラストそのまま（色違いなし）。状態が「ふつう」以外なら汚れ・キラキラだけ重ねる */
 function carImgURL(car){
   if(!car)return "";
-  const key=car.name+"|"+car.color+"|"+car.cond;
-  if(_carImgCache[key]!==undefined)return _carImgCache[key];
   const slug=CAR_SLUG[car.name];
   if(!slug)return vectorCarURL(car);
+  if(car.cond===1)return "cars/"+slug+".webp";
+  const key=car.name+"|"+car.cond;
+  if(_carImgCache[key]!==undefined)return _carImgCache[key];
   if(!_carImgBusy[key]){
     _carImgBusy[key]=1;
     const im=new Image();
     im.onload=function(){
-      whenMaskReady(function(){
-        let url="";
-        try{url=recolorCarImage(im,car,slug);}catch(e){url="";}
-        _carImgCache[key]=url||("cars/"+slug+".webp");
-        if(S){renderPanel();if(B&&B.carId===car.id&&typeof renderBattle==="function")renderBattle();}
-      });
+      let url="";
+      try{url=processCarImage(im,car);}catch(e){url="";}
+      _carImgCache[key]=url||("cars/"+slug+".webp");
+      if(S){renderPanel();if(B&&B.carId===car.id&&typeof renderBattle==="function")renderBattle();}
     };
     im.onerror=function(){_carImgCache[key]=vectorCarURL(car);if(S)renderPanel();};
     im.src="cars/"+slug+".webp";
   }
-  return "cars/"+slug+".webp"; /* 読み込み中は元の色のイラストを出す */
+  return "cars/"+slug+".webp"; /* 読み込み中は素のイラストを出す */
 }
 function vectorCarURL(car){
   const key="vec|"+car.name+"|"+car.color+"|"+car.cond;
@@ -1149,63 +1153,12 @@ function vectorCarURL(car){
   _carImgCache[key]=url;
   return url;
 }
-/* --- 色の変換ヘルパー --- */
-function rgbToHsl(r,g,b){
-  r/=255;g/=255;b/=255;
-  const mx=Math.max(r,g,b),mn=Math.min(r,g,b);let h=0,s=0;const l=(mx+mn)/2;
-  if(mx!==mn){const d=mx-mn;s=l>0.5?d/(2-mx-mn):d/(mx+mn);
-    if(mx===r)h=(g-b)/d+(g<b?6:0);else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;}
-  return [h,s,l];
-}
-function hslToRgb(h,s,l){
-  h=((h%360)+360)%360/360;
-  const q=l<0.5?l*(1+s):l+s-l*s,p=2*l-q;
-  function f(t){if(t<0)t+=1;if(t>1)t-=1;
-    if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;}
-  if(s===0){const v=Math.round(l*255);return [v,v,v];}
-  return [Math.round(f(h+1/3)*255),Math.round(f(h)*255),Math.round(f(h-1/3)*255)];
-}
-function hexToHsl(hex){
-  const n=parseInt(hex.slice(1),16);
-  return rgbToHsl((n>>16)&255,(n>>8)&255,n&255);
-}
-/* 写真イラストのボディ色を、車の色に付け替える（ボディの型紙マスクを使う） */
-function recolorCarImage(im,car,slug){
+/* 状態の表現だけ重ねる：いまいち=汚れ、ピカピカ=キラキラ */
+function processCarImage(im,car){
   const W=520,H=Math.max(200,Math.round(W*im.height/im.width));
   const cv=document.createElement("canvas");cv.width=W;cv.height=H;
   const g=cv.getContext("2d");if(!g)return "";
   g.drawImage(im,0,0,W,H);
-  const target=hexToHsl(CAR_PAINT[car.color]||"#c0c0c0");
-  const tile=(_maskState===2&&_maskImg)?MASK_TILE[slug]:undefined;
-  if(tile!==undefined){
-    /* 型紙を同じ大きさに描いて読み取る */
-    const mc=document.createElement("canvas");mc.width=W;mc.height=H;
-    const mg=mc.getContext("2d");
-    mg.drawImage(_maskImg,(tile%8)*384,Math.floor(tile/8)*288,384,288,0,0,W,H);
-    const md=mg.getImageData(0,0,W,H).data;
-    const img=g.getImageData(0,0,W,H),d=img.data;
-    /* ボディ部分の明るさの真ん中あたり（陰影の基準） */
-    const samples=[];
-    for(let p=0;p<W*H;p+=7){if(md[p*4]>128){const hsl=rgbToHsl(d[p*4],d[p*4+1],d[p*4+2]);samples.push(hsl[2]);}}
-    samples.sort(function(a,b){return a-b;});
-    const medL=samples.length?samples[samples.length>>1]:0.5;
-    const achro=target[1]<0.12; /* 白・黒・銀は色みなし */
-    for(let p=0,i=0;p<W*H;p++,i+=4){
-      const a=md[i]/255;
-      if(a<0.03)continue;
-      const hsl=rgbToHsl(d[i],d[i+1],d[i+2]);
-      let ns,nl;
-      nl=Math.max(0.05,Math.min(0.96,target[2]+(hsl[2]-medL)*0.62));
-      if(achro){ns=Math.min(hsl[1],0.07);}
-      else{ns=Math.max(0,Math.min(1,target[1]*(0.72+0.55*Math.min(1,hsl[1]*1.5))));}
-      const rgb=hslToRgb(target[0],ns,nl);
-      d[i]=Math.round(d[i]*(1-a)+rgb[0]*a);
-      d[i+1]=Math.round(d[i+1]*(1-a)+rgb[1]*a);
-      d[i+2]=Math.round(d[i+2]*(1-a)+rgb[2]*a);
-    }
-    g.putImageData(img,0,0);
-  }
-  /* 状態の表現：いまいち=汚れ、ピカピカ=キラキラ */
   if(car.cond===0){
     g.fillStyle="rgba(105,84,50,.28)";
     let seed=car.id*7919;
