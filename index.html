@@ -1153,21 +1153,38 @@ function hexToHsl(hex){
   const n=parseInt(hex.slice(1),16);
   return rgbToHsl((n>>16)&255,(n>>8)&255,n&255);
 }
-/* 元の写真が白・銀・黒の車のとき: 背景との差で車体を見つけて色を付ける */
+/* 元の写真が白・銀・黒の車のとき: 背景を端からたどって塗り分け、車体に色を付ける */
 function recolorAchromatic(g,W,H,target){
   const img=g.getImageData(0,0,W,H),d=img.data;
-  function px(x,y){const i=(y*W+x)*4;return [d[i],d[i+1],d[i+2]];}
-  const cs=[px(2,2),px(W-3,2),px(2,H-3),px(W-3,H-3)];
-  const bg=[0,1,2].map(function(k){return Math.round(cs.reduce(function(a,c){return a+c[k];},0)/4);});
+  /* 背景マスク: 画像の端から「隣と色が近い」ピクセルをたどる（水彩のムラにも対応） */
+  const bgm=new Uint8Array(W*H);
+  const stack=[];
+  function tryPush(p){
+    if(bgm[p])return;bgm[p]=1;stack.push(p);
+  }
+  for(let x=0;x<W;x++){tryPush(x);tryPush((H-1)*W+x);}
+  for(let y=0;y<H;y++){tryPush(y*W);tryPush(y*W+W-1);}
+  function dist2(p,q){
+    const i=p*4,j=q*4;
+    const dr=d[i]-d[j],dg=d[i+1]-d[j+1],db=d[i+2]-d[j+2];
+    return dr*dr+dg*dg+db*db;
+  }
+  while(stack.length){
+    const p=stack.pop();
+    const x=p%W,y=(p/W)|0;
+    if(x>0&&!bgm[p-1]&&dist2(p,p-1)<24*24)tryPush(p-1);
+    if(x<W-1&&!bgm[p+1]&&dist2(p,p+1)<24*24)tryPush(p+1);
+    if(y>0&&!bgm[p-W]&&dist2(p,p-W)<24*24)tryPush(p-W);
+    if(y<H-1&&!bgm[p+W]&&dist2(p,p+W)<24*24)tryPush(p+W);
+  }
   for(let i=0,p=0;i<d.length;i+=4,p++){
-    const dr=d[i]-bg[0],dg=d[i+1]-bg[1],db=d[i+2]-bg[2];
-    if(dr*dr+dg*dg+db*db<32*32)continue; /* 背景はそのまま */
+    if(bgm[p])continue; /* 背景はそのまま */
     const hsl=rgbToHsl(d[i],d[i+1],d[i+2]);
     if(hsl[2]<0.13)continue; /* タイヤなどの真っ暗な部分は残す */
     const glass=(hsl[2]<0.45&&hsl[0]>180&&hsl[0]<250&&hsl[1]<0.4)?0.3:1;
     let nh,ns,nl;
     if(target[1]<0.12){ns=Math.min(hsl[1],0.07);nl=hsl[2]+(target[2]-0.62)*0.7;nh=target[0];}
-    else{nh=target[0];ns=Math.max(hsl[1],target[1]*0.75*glass);nl=hsl[2];}
+    else{nh=target[0];ns=Math.max(hsl[1],target[1]*0.75*glass);nl=Math.max(0.05,Math.min(0.95,hsl[2]+(target[2]-0.45)*0.35));}
     const rgb=hslToRgb(nh,ns,Math.max(0.04,Math.min(0.96,nl)));
     d[i]=rgb[0];d[i+1]=rgb[1];d[i+2]=rgb[2];
   }
@@ -1179,7 +1196,7 @@ function sampleBasePaint(g,w,h){
   const bins={};
   for(let i=0;i<img.length;i+=16){
     const hsl=rgbToHsl(img[i],img[i+1],img[i+2]);
-    if(hsl[1]>0.28&&hsl[2]>0.14&&hsl[2]<0.86){
+    if(hsl[1]>0.20&&hsl[2]>0.12&&hsl[2]<0.88){
       const bin=Math.floor(hsl[0]/15);
       if(!bins[bin])bins[bin]={n:0,h:0,s:0,l:0};
       const B=bins[bin];B.n++;B.h+=hsl[0];B.s+=hsl[1];B.l+=hsl[2];
@@ -1187,7 +1204,7 @@ function sampleBasePaint(g,w,h){
   }
   let best=null;
   for(const k in bins){if(!best||bins[k].n>best.n)best=bins[k];}
-  if(!best||best.n<30)return null;
+  if(!best||best.n<20)return null;
   return [best.h/best.n,best.s/best.n,best.l/best.n];
 }
 /* 写真イラストのボディ色を、車の色に付け替える */
