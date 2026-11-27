@@ -1369,6 +1369,8 @@ function drawIsoCar(g,cx,gy,car){
 function drawScene(){
   const cvEl=$('cv'); if(!cvEl||!gameState)return;
   const g=cvEl.getContext('2d'); if(!g)return;
+  g.setTransform(2,0,0,2,0,0);
+  g.clearRect(0,0,480,360);
   const s=gameState;
   /* 芝生ベース */
   g.fillStyle='#a5d68a'; g.fillRect(0,0,480,360);
@@ -1444,7 +1446,7 @@ function drawScene(){
   g.strokeStyle='#f5f2e8'; g.lineWidth=2; g.setLineDash([14,12]); line(g,0,345,480,345); g.setLineDash([]);
   roadCars.forEach(rc=>{
     const cy=rc.lane? 354:339;
-    if(rc.lane===0){ g.save(); g.translate(rc.x*2,0); g.scale(-1,1); g.translate(-rc.x*2,0); }
+    if(rc.lane===0){ g.save(); g.translate(rc.x,0); g.scale(-1,1); g.translate(-rc.x,0); }
     drawIsoCar(g,rc.x,cy,rc.car);
     if(rc.lane===0) g.restore();
   });
@@ -1456,6 +1458,7 @@ function drawScene(){
   visitors.forEach(c=>drawPerson(g,c.x,c.y,c));
   /* 浮き文字 */
   floats.filter(f=>f.life>0).forEach(f=>{ g.globalAlpha=Math.min(1,f.life/13); g.font='bold 13px sans-serif'; g.textAlign='center'; g.lineWidth=3.5; g.strokeStyle='#fff'; g.strokeText(f.text,f.x,f.y); g.fillStyle=f.color; g.fillText(f.text,f.x,f.y); g.globalAlpha=1; });
+  g.setTransform(1,0,0,1,0,0);
 }
 
 /* ================================================================
