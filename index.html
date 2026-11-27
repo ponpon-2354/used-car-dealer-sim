@@ -386,7 +386,8 @@ function loadSlot(i){
 /* 展示スポット: 上の段8・下の段8（左→右）。店の大きさで使える数が変わる */
 function spotPos(idx){
   const col=idx%8, row=Math.floor(idx/8);
-  return {x:12+col*58, y:row===0?58:132, w:54, h:42, cx:12+col*58+27, cy:(row===0?58:132)+21};
+  const x=28+col*54+(row?18:0), y=row?162:88;
+  return {x:x, y:y, w:54, h:44, cx:x+27, cy:y+22};
 }
 function spotCount(){return SHOP_SIZES[gameState.shopSize].cap;}
 /* 展示中の車（ピットに入っていない車）→ スポット番号つき */
@@ -401,7 +402,8 @@ function carSpot(carId){
 /* 装飾スロット: A=真ん中の列(0〜7) / B=下の列(8〜15)。隣のスポットを返す */
 function decorSlotPos(idx){
   const col=idx%8, band=idx<8?0:1;
-  return {x:12+col*58+12, y:band===0?107:181, w:30, h:20, cx:12+col*58+27, cy:(band===0?107:181)+10};
+  const x=40+col*54, y=band?210:131;
+  return {x:x, y:y, w:30, h:18, cx:x+15, cy:y+9};
 }
 function adjacentSpots(decorIdx){
   const col=decorIdx%8;
@@ -541,7 +543,7 @@ function genCustomer(){
   const wantType=prefs.length?pick(prefs):pick(uts);
   return {id:gameState.nextId++,name:pick(LAST)+" "+pick(FIRST),arch:t.label,emoji:t.emoji,
     wantType:wantType,budget:ri(t.budget[0],t.budget[1])*10000,
-    x:240,y:352,tx:240,ty:352,state:"enter",carId:0,attendant:null,gauge:0,
+    x:240,y:326,tx:240,ty:326,state:"enter",carId:0,attendant:null,gauge:0,
     bubble:"",bubbleT:0,waitT:0,look:{hair:pick(["#6b4226","#2e2a26","#8a5a2b","#444","#7a4d2b"]),cloth:pick(["#7a9cc6","#e58bb1","#57b368","#f2c230","#9a6ad8","#e5533d"])}};
 }
 /* お客さんが狙う車（好み・予算・魅力で選ぶ） */
@@ -988,10 +990,10 @@ function drawCarSide(g,car){
 /* ================================================================
    仲間の姿・社長・妻（画面上の動き）
    ================================================================ */
-const BOSS_HOME={x:330,y:272}, DESK_FRONT={x:405,y:296}, PIT_POS={x:88,y:262}, ENTRANCE={x:240,y:352};
+const BOSS_HOME={x:330,y:272}, DESK_FRONT={x:405,y:296}, PIT_POS={x:88,y:262}, ENTRANCE={x:240,y:322};
 let bossFig={x:BOSS_HOME.x,y:BOSS_HOME.y,tx:BOSS_HOME.x,ty:BOSS_HOME.y,mode:"idle",cuId:0,name:"社長",hair:"#6b4226",cloth:"#e5533d",bubble:"",bubbleT:0};
 let wifeFig={x:286,y:250,tx:286,ty:250,wait:20,name:"妻",hair:"#2e2a26",cloth:"#f08a2e",long:true,bubble:"",bubbleT:0};
-const WANDER=[[120,120],[300,120],[180,205],[90,205],[360,205],[240,250]];
+const WANDER=[[120,150],[300,150],[180,224],[90,224],[360,224],[240,296]];
 function syncStaffFigs(){
   if(!gameState)return;
   staffFigs=staffFigs.filter(function(f){return gameState.staff.some(function(s){return s.id===f.sid;});});
@@ -1321,112 +1323,139 @@ function sceneImg(slug){
   return (im.complete&&im.naturalWidth)?im:null;
 }
 function addFloat(x,y,text,color){floats.push({x:x,y:y,text:text,color:color,life:26});}
+/* ================================================================
+   景色（クォータービュー風に全面描き直し）
+   ================================================================ */
+let roadCars=[];
+function tickRoad(){
+  if(roadCars.length<3 && Math.random()<0.035){
+    const lane=Math.random()<0.5?0:1;
+    roadCars.push({lane, x: lane? 530:-50, sp: 1.7+Math.random()*1.7,
+      car:{type:pick(TYPES), color:pick(Object.keys(CAR_PAINT)), cond:1}});
+  }
+  roadCars=roadCars.filter(rc=>{ rc.x += rc.lane? -rc.sp : rc.sp; return rc.x>-70 && rc.x<550; });
+}
+function line(g,x1,y1,x2,y2){ g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.stroke(); }
+function drawTree(g,x,y,s){
+  g.fillStyle='rgba(40,45,40,.18)'; g.beginPath(); g.ellipse(x,y+16*s,13*s,4*s,0,0,7); g.fill();
+  g.fillStyle='#8a6f4d'; rr(g,x-2.5*s,y+2,5*s,15*s,2); g.fill();
+  g.fillStyle='#4e9e4e'; g.beginPath(); g.arc(x,y,13*s,0,7); g.fill();
+  g.fillStyle='#63bb63'; g.beginPath(); g.arc(x-6*s,y+4*s,9*s,0,7); g.arc(x+6*s,y+4*s,9*s,0,7); g.fill();
+  g.fillStyle='#83d183'; g.beginPath(); g.arc(x-3*s,y-4*s,6*s,0,7); g.fill();
+}
+/* 立体感のある車（上・前・横が見えるクォータービュー） */
+function drawIsoCar(g,cx,gy,car){
+  const base=CAR_PAINT[car.color]||'#d8d8d8';
+  const dark=shade(base,0.7), light=shade(base,1.3);
+  const P={ '軽':{L:52,H:15,C:15,CL:32}, 'コンパクト':{L:56,H:14,C:11,CL:30}, 'セダン':{L:58,H:13,C:10,CL:32}, 'SUV':{L:57,H:17,C:13,CL:32}, 'ミニバン':{L:56,H:16,C:15,CL:38}, 'スポーツ':{L:58,H:11,C:8,CL:26} }[car.type]||{L:56,H:14,C:11,CL:30};
+  const L=P.L, x0=cx-L/2, x1=cx+L/2, bodyTop=gy-P.H-7, bodyBot=gy-3;
+  g.fillStyle='rgba(40,45,40,.25)'; g.beginPath(); g.ellipse(cx,gy+1,L/2+5,5.5,0,0,7); g.fill();
+  g.fillStyle=base; rr(g,x0,bodyTop,L,P.H+4,5); g.fill(); g.strokeStyle=INK; g.lineWidth=1.6; g.stroke();
+  g.fillStyle=dark; rr(g,x0,bodyTop,10,P.H+4,4); g.fill();
+  const cabX0=cx-P.CL/2+2, cabX1=cx+P.CL/2+4, cabTop=bodyTop-P.C+3;
+  g.fillStyle='#bfe0ea'; g.beginPath();
+  g.moveTo(cabX0+4,bodyTop+1); g.lineTo(cabX0+9,cabTop); g.lineTo(cabX1-3,cabTop); g.lineTo(cabX1+2,bodyTop+1); g.closePath(); g.fill();
+  g.strokeStyle=INK; g.lineWidth=1.4; g.stroke();
+  g.fillStyle=light; rr(g,cabX0+9,cabTop-3,P.CL-12,5,2); g.fill(); g.strokeStyle=INK; g.lineWidth=1.1; g.stroke();
+  g.strokeStyle='rgba(58,51,40,.5)'; g.lineWidth=1.2; line(g,cx+3,cabTop+1,cx+3,bodyTop);
+  g.strokeStyle='rgba(58,51,40,.32)'; line(g,cx-7,bodyTop+3,cx-7,bodyBot-2); line(g,cx+13,bodyTop+3,cx+13,bodyBot-2);
+  g.fillStyle='#ffe9a8'; rr(g,x0+1,bodyTop+P.H-4,5,4,1.5); g.fill();
+  g.fillStyle='#e2574c'; rr(g,x1-5,bodyTop+P.H-4,4,4,1.5); g.fill();
+  g.fillStyle='#ffffff'; rr(g,x0+3,bodyBot-6,8,5,1); g.fill(); g.strokeStyle=INK; g.lineWidth=.8; g.stroke();
+  [x0+11,x1-11].forEach(wx=>{ g.fillStyle='#2c2c30'; g.beginPath(); g.ellipse(wx,bodyBot+1,6.5,4.5,0,0,7); g.fill(); g.fillStyle='#cfd4d8'; g.beginPath(); g.ellipse(wx,bodyBot+1,3,2.2,0,0,7); g.fill(); });
+  if(car.cond===0){ g.fillStyle='rgba(122,84,40,.38)'; [[-14,2],[6,4],[16,1],[-2,5]].forEach(([dx,dy])=>{ g.beginPath(); g.ellipse(cx+dx,bodyTop+dy+4,4.5,2.6,0,0,7); g.fill(); }); }
+  if(car.cond===2){ spark(g,x0+8,bodyTop-4,5); spark(g,x1-8,cabTop-2,4); }
+}
 function drawScene(){
-  const cv=$("cv");if(!cv||!gameState)return;
-  const g=cv.getContext("2d");if(!g)return;
-  g.setTransform(2,0,0,2,0,0);
-  g.clearRect(0,0,480,360);
-  /* 地面 */
-  g.fillStyle="#a8bf9f";g.fillRect(0,0,480,360);
-  g.fillStyle="#c9cfc9";g.fillRect(0,48,480,262);
+  const cvEl=$('cv'); if(!cvEl||!gameState)return;
+  const g=cvEl.getContext('2d'); if(!g)return;
+  const s=gameState;
+  /* 芝生ベース */
+  g.fillStyle='#a5d68a'; g.fillRect(0,0,480,360);
   /* 建物 */
-  g.fillStyle="#fdf3d8";g.fillRect(0,0,480,48);
-  g.fillStyle="#e5533d";g.fillRect(0,0,480,10);
-  g.fillStyle="#fff";rr(g,150,14,180,28,8);g.fill();g.strokeStyle=INK;g.lineWidth=2;rr(g,150,14,180,28,8);g.stroke();
-  g.fillStyle=INK;g.font="bold 15px sans-serif";g.textAlign="center";
-  g.fillText("🚗 "+gameState.shopName,240,33);
-  g.font="bold 11px sans-serif";g.fillStyle="#7a6a55";
-  g.fillText(storeRank(),52,30);
-  g.fillText("🔬 "+gameState.pt+"Pt",428,30);
+  g.fillStyle='rgba(40,45,40,.15)'; rr(g,154,36,180,52,6); g.fill();
+  g.fillStyle='#fff6dd'; rr(g,150,30,180,54,5); g.fill(); g.strokeStyle=INK; g.lineWidth=1.6; g.stroke();
+  g.fillStyle='#7a9cc6'; g.beginPath(); g.moveTo(140,30); g.lineTo(340,30); g.lineTo(318,8); g.lineTo(162,8); g.closePath(); g.fill(); g.strokeStyle=INK; g.stroke();
+  g.fillStyle='#ffffff'; rr(g,180,11,120,17,3); g.fill(); g.strokeStyle=INK; g.lineWidth=1.2; g.stroke();
+  g.fillStyle=INK; g.font='bold 11px sans-serif'; g.textAlign='center'; g.fillText(s.shopName,240,23.5);
+  g.fillStyle='#e2574c'; g.fillRect(150,40,180,7);
+  g.fillStyle='#bfe0ea'; rr(g,160,52,36,24,2); g.fill(); g.strokeStyle=INK; g.lineWidth=1.2; g.stroke();
+  rr(g,222,52,36,24,2); g.fill(); g.stroke();
+  g.fillStyle='#8a6f4d'; rr(g,290,50,28,34,2); g.fill(); g.strokeStyle=INK; g.stroke();
+  g.fillStyle='#ffd94d'; g.beginPath(); g.arc(311,68,2,0,7); g.fill();
+  /* 木（奥） */
+  drawTree(g,52,58,1.15); drawTree(g,428,58,1.15); drawTree(g,116,64,0.9); drawTree(g,364,64,0.9);
+  /* 駐車場（アスファルト） */
+  g.fillStyle='#b9bfba'; rr(g,14,84,452,232,8); g.fill(); g.strokeStyle='rgba(58,51,40,.35)'; g.lineWidth=1.5; g.stroke();
+  g.fillStyle='rgba(58,51,40,.06)';
+  for(let i=0;i<130;i++){ g.fillRect(18+((i*67)%444), 88+((i*41)%224), 3, 2); }
   /* 展示スポット */
-  const disp=displayedCars();
   for(let i=0;i<16;i++){
-    const p=spotPos(i);
-    if(i>=spotCount()){
-      g.fillStyle="rgba(90,90,90,.18)";rr(g,p.x,p.y,p.w,p.h,6);g.fill();
-      g.fillStyle="rgba(74,59,42,.45)";g.font="bold 13px sans-serif";g.fillText("🔒",p.cx,p.cy+4);
-      continue;
-    }
-    g.fillStyle="#dde3dd";rr(g,p.x,p.y,p.w,p.h,6);g.fill();
-    g.strokeStyle="#fff";g.lineWidth=2;rr(g,p.x,p.y,p.w,p.h,6);g.stroke();
-    const d=disp.find(function(x){return x.spot===i;});
-    if(d){
-      const im=sceneImg(CAR_SLUG[d.car.name]);
-      if(im){
-        const iw=p.w-4, ih=iw*im.naturalHeight/im.naturalWidth;
-        g.drawImage(im,p.x+2,p.y+2,iw,Math.min(ih,p.h-14));
-      }else{
-        g.fillStyle=CAR_PAINT[d.car.color]||"#ccc";rr(g,p.x+6,p.y+8,p.w-12,18,7);g.fill();
-      }
-      const eff=spotEffects(i,d.car);
-      if(eff.combos.length){g.strokeStyle="#e58bb1";g.lineWidth=2.5;rr(g,p.x,p.y,p.w,p.h,6);g.stroke();spark(g,p.x+p.w-6,p.y+6,5);}
-      g.fillStyle="#fff";rr(g,p.x+4,p.y+p.h-13,46,11,4);g.fill();
-      g.fillStyle="#b97a00";g.font="bold 9px sans-serif";g.fillText(man(carPrice(d.car)),p.cx,p.y+p.h-4.5);
-    }
+    const p=spotPos(i), open=i<spotCount();
+    g.beginPath(); g.moveTo(p.x+4,p.y+4); g.lineTo(p.x+p.w,p.y+4); g.lineTo(p.x+p.w-4,p.y+p.h); g.lineTo(p.x,p.y+p.h); g.closePath();
+    if(open){ g.fillStyle='rgba(255,255,255,.20)'; g.fill(); g.strokeStyle='rgba(255,255,255,.65)'; g.lineWidth=1.4; g.stroke(); }
+    else { g.fillStyle='rgba(40,45,40,.10)'; g.fill(); }
+    if(!open){ g.font='13px sans-serif'; g.textAlign='center'; g.fillText('🔒',p.cx,p.cy+5); }
+    else if(!s.cars[i]){ g.fillStyle='rgba(58,51,40,.35)'; g.font='bold 9px sans-serif'; g.textAlign='center'; g.fillText('空き',p.cx,p.y+p.h-4); }
   }
   /* 装飾スロット */
   for(let i=0;i<16;i++){
-    const p=decorSlotPos(i);
-    const did=gameState.decors[i];
-    if(did){
-      const dc=decorById(did);
-      g.fillStyle="#fdf6da";rr(g,p.x,p.y,p.w,p.h,6);g.fill();g.strokeStyle="#e5c98c";g.lineWidth=1.5;rr(g,p.x,p.y,p.w,p.h,6);g.stroke();
-      g.font="15px sans-serif";g.fillText(dc?dc.emoji:"🪴",p.cx,p.cy+5);
-    }else{
-      g.strokeStyle="rgba(122,106,85,.4)";g.lineWidth=1.2;g.setLineDash([3,3]);rr(g,p.x,p.y,p.w,p.h,6);g.stroke();g.setLineDash([]);
-    }
+    const d=decorSlotPos(i), id=s.decors[i];
+    g.fillStyle='rgba(255,255,255,.25)'; rr(g,d.x,d.y,d.w,d.h,4); g.fill();
+    if(id){ const dc=decorById(id); g.font='17px sans-serif'; g.textAlign='center'; g.fillText(dc.emoji,d.cx,d.cy+6); }
+    else { g.strokeStyle='rgba(255,255,255,.5)'; g.lineWidth=1; rr(g,d.x+3,d.y+3,d.w-6,d.h-6,3); g.stroke(); }
+  }
+  /* 展示車＋値札 */
+  for(let i=0;i<16;i++){
+    const car=s.cars[i]; if(!car) continue;
+    const p=spotPos(i), combo=spotEffects(i,car).combos.length>0;
+    if(combo){ g.strokeStyle='#ff7eb6'; g.lineWidth=2.4; rr(g,p.x-2,p.y-2,p.w+4,p.h+6,7); g.stroke(); spark(g,p.x+p.w-2,p.y-2,5); }
+    drawIsoCar(g,p.cx,p.y+40,car);
+    g.fillStyle='#f08a2e'; rr(g,p.cx-18,p.y-13,36,13,4); g.fill(); g.strokeStyle=INK; g.lineWidth=1; g.stroke();
+    g.fillStyle='#fff'; g.font='bold 9px sans-serif'; g.textAlign='center'; g.fillText(man(car.price),p.cx,p.y-3);
   }
   /* 整備ピット */
-  g.fillStyle="#f3e3c2";rr(g,8,214,164,86,10);g.fill();g.strokeStyle=INK;g.lineWidth=2;rr(g,8,214,164,86,10);g.stroke();
-  g.fillStyle=INK;g.font="bold 12px sans-serif";g.fillText("🔧 整備ピット",88,232);
-  if(gameState.pit){
-    const car=gameState.cars.find(function(c){return c.id===gameState.pit.carId;});
-    if(car){
-      const im=sceneImg(CAR_SLUG[car.name]);
-      if(im)g.drawImage(im,30,240,110,110*im.naturalHeight/im.naturalWidth);
-      g.fillStyle="#fff";rr(g,24,278,132,14,6);g.fill();g.strokeStyle=INK;g.lineWidth=1.5;rr(g,24,278,132,14,6);g.stroke();
-      g.fillStyle="#57b368";g.fillRect(26,280,128*clamp(gameState.pit.prog,0,1),10);
-      g.fillStyle=INK;g.font="bold 10px sans-serif";g.fillText(WORKS[gameState.pit.work].name+"中… "+car.name,88,272);
-    }
-  }else{
-    g.fillStyle="#7a6a55";g.font="12px sans-serif";g.fillText("空き",88,266);
-  }
-  if(gameState.pitQueue.length){g.fillStyle="#7a6a55";g.font="bold 10px sans-serif";g.fillText("待ち "+gameState.pitQueue.length+"台",88,296);}
+  g.fillStyle='#e9dcbc'; rr(g,10,238,168,76,6); g.fill(); g.strokeStyle=INK; g.lineWidth=1.4; g.stroke();
+  g.fillStyle='#8a6f4d'; rr(g,10,238,168,17,6); g.fill();
+  g.fillStyle='#fff'; g.font='bold 10px sans-serif'; g.textAlign='center'; g.fillText('🔧 整備ピット',94,250);
+  if(s.pit){
+    const pcar=s.cars.find(c=>c.id===s.pit.carId);
+    if(pcar) drawIsoCar(g,PIT_POS.x,PIT_POS.y+16,pcar);
+    const r=s.pit.prog;
+    g.fillStyle='#fff'; g.font='bold 9px sans-serif'; g.textAlign='right'; g.fillText(WORKS[s.pit.work].name+'中 '+Math.floor(r*100)+'%',172,250);
+    g.fillStyle='#fff'; rr(g,24,298,120,9,4); g.fill(); g.strokeStyle=INK; g.lineWidth=1; g.stroke();
+    g.fillStyle='#63bb63'; rr(g,25,299,118*r,7,3); g.fill();
+    g.fillStyle=INK; s.pitQueue.forEach((q,qi)=>{ const qc=s.cars.find(c=>c.id===q.carId); if(qc){ g.font='9px sans-serif'; g.textAlign='left'; g.fillText('⏳'+qc.name,124,276+qi*11); } });
+  } else { g.fillStyle='rgba(58,51,40,.45)'; g.font='10px sans-serif'; g.textAlign='center'; g.fillText('（整備メニューから作業できるよ）',94,282); }
   /* 商談デスク */
-  g.fillStyle="#f3e3c2";rr(g,322,214,150,86,10);g.fill();g.strokeStyle=INK;g.lineWidth=2;rr(g,322,214,150,86,10);g.stroke();
-  g.fillStyle="#b08954";rr(g,352,246,90,26,6);g.fill();g.strokeStyle=INK;rr(g,352,246,90,26,6);g.stroke();
-  g.fillStyle=INK;g.font="bold 12px sans-serif";g.fillText("💰 商談デスク",397,232);
-  /* 入口 */
-  g.fillStyle="#8a9a8c";g.fillRect(196,330,88,30);
-  g.fillStyle="#fff";g.font="bold 12px sans-serif";g.fillText("🚪 入口",240,350);
+  g.fillStyle='#dfe9f5'; rr(g,316,238,156,76,6); g.fill(); g.strokeStyle=INK; g.lineWidth=1.4; g.stroke();
+  g.fillStyle='#b08954'; rr(g,332,264,124,24,4); g.fill(); g.strokeStyle=INK; g.stroke();
+  g.fillStyle='#8a6f4d'; rr(g,332,264,124,7,3); g.fill();
+  g.fillStyle=INK; g.font='bold 10px sans-serif'; g.textAlign='center'; g.fillText('💰 商談デスク',394,252);
+  /* 柵と街灯 */
+  g.strokeStyle='#8a8f8a'; g.lineWidth=2;
+  line(g,14,316,214,316); line(g,266,316,466,316); line(g,14,309,214,309); line(g,266,309,466,309);
+  for(let fx=20;fx<470;fx+=26){ if(fx>208&&fx<272) continue; line(g,fx,306,fx,318); }
+  [204,276].forEach(lx=>{ g.strokeStyle=INK; g.lineWidth=2; line(g,lx,318,lx,294); g.fillStyle='#ffe9a8'; g.beginPath(); g.arc(lx,292,4,0,7); g.fill(); g.strokeStyle=INK; g.lineWidth=1; g.stroke(); });
+  g.fillStyle=INK; g.font='bold 10px sans-serif'; g.textAlign='center'; g.fillText('入口',240,313);
+  /* 歩道と道路 */
+  g.fillStyle='#cfd4cd'; g.fillRect(0,320,480,10);
+  g.fillStyle='#6f7477'; g.fillRect(0,330,480,30);
+  g.strokeStyle='#f5f2e8'; g.lineWidth=2; g.setLineDash([14,12]); line(g,0,345,480,345); g.setLineDash([]);
+  roadCars.forEach(rc=>{
+    const cy=rc.lane? 354:339;
+    if(rc.lane===0){ g.save(); g.translate(rc.x*2,0); g.scale(-1,1); g.translate(-rc.x*2,0); }
+    drawIsoCar(g,rc.x,cy,rc.car);
+    if(rc.lane===0) g.restore();
+  });
+  /* 木（手前） */
+  drawTree(g,470,120,0.85);
   /* 人 */
-  const peopleDraw=[];
-  peopleDraw.push({fig:bossFig,kind:"boss"});
-  peopleDraw.push({fig:wifeFig,kind:"wife"});
-  staffFigs.forEach(function(f){peopleDraw.push({fig:f,kind:"staff"});});
-  visitors.forEach(function(cu){peopleDraw.push({fig:cu,kind:"guest",cu:cu});});
-  peopleDraw.sort(function(a,b){return a.fig.y-b.fig.y;});
-  peopleDraw.forEach(function(pd){
-    const f=pd.fig;
-    if(pd.kind==="guest"){
-      const cu=pd.cu;
-      drawPerson(g,f.x,f.y,{name:cu.arch,hair:cu.look.hair,cloth:cu.look.cloth,bubble:cu.bubble,bubbleT:cu.bubbleT,kind:"guest",guest:cu});
-      if(cu.state==="consider"){
-        g.fillStyle="#fff";rr(g,f.x-17,f.y-58,34,7,3);g.fill();g.strokeStyle=INK;g.lineWidth=1.2;rr(g,f.x-17,f.y-58,34,7,3);g.stroke();
-        g.fillStyle="#ffb52e";g.fillRect(f.x-15,f.y-56,30*clamp(cu.gauge,0,1),3.4);
-      }
-    }else{
-      drawPerson(g,f.x,f.y,{name:f.name,hair:f.hair,cloth:f.cloth,long:f.long,bubble:f.bubble,bubbleT:f.bubbleT,kind:pd.kind});
-    }
-  });
-  /* 飛び出す文字 */
-  floats=floats.filter(function(fl){return fl.life>0;});
-  floats.forEach(function(fl){
-    g.font="bold 15px sans-serif";g.textAlign="center";
-    g.lineWidth=3;g.strokeStyle="#fff";g.strokeText(fl.text,fl.x,fl.y);
-    g.fillStyle=fl.color;g.fillText(fl.text,fl.x,fl.y);
-  });
-  g.setTransform(1,0,0,1,0,0);
+  const figs=[bossFig,wifeFig,...staffFigs].sort((a,b)=>a.y-b.y);
+  figs.forEach(f=>drawPerson(g,f.x,f.y,f));
+  visitors.forEach(c=>drawPerson(g,c.x,c.y,c));
+  /* 浮き文字 */
+  floats.filter(f=>f.life>0).forEach(f=>{ g.globalAlpha=Math.min(1,f.life/13); g.font='bold 13px sans-serif'; g.textAlign='center'; g.lineWidth=3.5; g.strokeStyle='#fff'; g.strokeText(f.text,f.x,f.y); g.fillStyle=f.color; g.fillText(f.text,f.x,f.y); g.globalAlpha=1; });
 }
 
 /* ================================================================
@@ -1808,6 +1837,7 @@ function logicTick(){
   tickCustomers();
   tickFigs();
   tickPit();
+  tickRoad();
   floats.forEach(function(fl){fl.y-=0.7;fl.life--;});
 }
 function frameLoop(ts){
