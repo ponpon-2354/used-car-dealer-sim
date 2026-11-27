@@ -569,10 +569,12 @@ function checkMoney(){
     }
   }
 }
+let marketDirty=false;
 function nextDay(){
   S.d++;S.days++;
   if(S.d>daysInMonth(S.y,S.m)){S.d=1;S.m++;if(S.m>12){S.m=1;S.y++;}monthEnd();}
-  refreshMarket();
+  /* 「車を買う」画面を見ている間は並びを入れ替えない（見えている車とデータがズレて、買うボタンが効かなくなるため） */
+  if(curPanel==="buy"){marketDirty=true;}else{refreshMarket();}
   /* お客さんが来るかどうか */
   let chance=0.5+S.shopSize*0.15+(S.cars.length?0: -0.4);
   if(Math.random()<chance&&!B)spawnCustomer();
@@ -645,7 +647,10 @@ function renderTop(){
   const b=$("badgeCars");
   if(S.cars.length){b.style.display="inline-block";b.textContent=S.cars.length;}else b.style.display="none";
 }
-function showPanel(p){curPanel=p;renderPanel();}
+function showPanel(p){
+  if(p==="buy"&&marketDirty){refreshMarket();marketDirty=false;}
+  curPanel=p;renderPanel();
+}
 let _panelHtml="";
 function renderPanel(){
   if(!S)return;
