@@ -156,6 +156,15 @@ canvas#cv{display:block;width:100%;aspect-ratio:480/270}
   <div class="row" style="margin-top:12px"><button class="primary" style="min-height:52px" onclick="closeModal('popModal')">わかった！</button></div>
 </div></div>
 
+<!-- 上書き確認（タイトル画面より前に出す） -->
+<div class="modal" id="askModal" style="z-index:300"><div class="mbox">
+  <div id="askBody"></div>
+  <div class="row" style="margin-top:12px">
+    <button style="min-height:52px" onclick="closeModal('askModal')">やめる</button>
+    <button class="primary" style="min-height:52px" onclick="askYes()">はい、はじめる</button>
+  </div>
+</div></div>
+
 <!-- ゲームオーバー -->
 <div class="modal" id="overModal"><div class="mbox">
   <h2>💦 お店が続けられなくなりました…</h2>
@@ -250,6 +259,7 @@ function readSlot(i){
 /* 昔のセーブに新しい項目を補う */
 function normalizeSave(o){
   if(o.plan===undefined)o.plan=null;
+  if(o.plan&&o.plan.spawned===undefined)o.plan.spawned=o.plan.days.filter(function(d){return d<o.d;}).length;
   if(o.opened===undefined)o.opened=(o.y*12+o.m)>=(2026*12+6);
   return o;
 }
@@ -282,13 +292,25 @@ function renderSlots(){
   $("slotList").innerHTML=html;
 }
 function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+let askCb=null;
 function askNewGame(i,hasData){
-  if(hasData&&!confirm("前のデータは消えます。本当にいいですか？"))return;
+  if(hasData){
+    /* ブラウザ標準の confirm は環境によって出ないことがあるので、ゲーム内の窓で聞く */
+    pendingSlot=i;
+    $("askBody").innerHTML="<p style='text-align:center;font-size:17px'>前のデータは消えます。<br>本当にいいですか？</p>";
+    askCb=function(){showNameBox();};
+    openModal("askModal");
+    return;
+  }
   pendingSlot=i;
+  showNameBox();
+}
+function showNameBox(){
   $("shopNameInput").value="";
   $("nameBox").style.display="block";
   $("shopNameInput").focus();
 }
+function askYes(){closeModal("askModal");if(askCb){const f=askCb;askCb=null;f();}}
 function cancelNewGame(){pendingSlot=-1;$("nameBox").style.display="none";}
 function confirmNewGame(){
   if(pendingSlot<0)return;
@@ -422,7 +444,7 @@ function makePlan(fromToday){
   const days=[];
   for(let i=0;i<n;i++){const j=ri(0,pool.length-1);days.push(pool.splice(j,1)[0]);}
   days.sort(function(a,b){return a-b;});
-  S.plan={y:S.y,m:S.m,days:days};
+  S.plan={y:S.y,m:S.m,days:days,spawned:0};
 }
 /* 計画が今月と合っていなければ作り直す（セーブ再開時の補完） */
 function ensurePlan(){
@@ -621,7 +643,11 @@ function nextDay(){
   if(curPanel==="buy"){marketDirty=true;}else{refreshMarket();}
   /* お客さんは「今月の計画」で決まった日に来る（開業準備中は来ない） */
   ensurePlan();
-  if(!isPrep()&&S.plan&&S.plan.days.indexOf(S.d)>=0&&!B)spawnCustomer();
+  /* 計画の日を過ぎていたら、次の日にまとめて来る（バトル中などで来られなかった分を取りこぼさない） */
+  if(!isPrep()&&S.plan&&!B){
+    const due=S.plan.days.filter(function(d){return d<=S.d;}).length;
+    if(due>(S.plan.spawned||0)){S.plan.spawned=(S.plan.spawned||0)+1;spawnCustomer();}
+  }
   renderTop();
   renderPanel();
   updateGuide();
