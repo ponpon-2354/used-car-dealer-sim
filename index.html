@@ -53,6 +53,7 @@ canvas#cv{display:block;width:100%;aspect-ratio:480/270}
 .row button{flex:1;min-height:48px}
 .tierbtn.on{background:#ffb52e;border-color:#d18f12;color:#5a3d00;font-weight:bold}
 /* 案内バー・お知らせ */
+.prep-banner{background:#fff3c9;border:3px solid #f0b429;border-radius:14px;padding:12px;font-size:16px;text-align:center;line-height:1.6;margin-bottom:10px}
 #guide{background:#fff3c9;border:3px solid #f0b429;border-radius:14px;padding:10px 12px;margin-top:10px;font-size:16px}
 #news{background:#eef7ee;border:2px solid #bcd8bc;border-radius:12px;padding:8px 12px;margin-top:10px;font-size:14px;min-height:20px}
 #waitInfo .waitbox{background:#ffe9e4;border:3px solid #e86a5e;border-radius:14px;padding:10px 12px;margin-top:10px}
@@ -146,7 +147,7 @@ canvas#cv{display:block;width:100%;aspect-ratio:480/270}
 <div class="modal" id="monthModal"><div class="mbox">
   <h2>📅 今月のまとめ</h2>
   <div id="monthBody"></div>
-  <div class="row" style="margin-top:12px"><button class="primary" style="min-height:52px" onclick="closeModal('monthModal')">わかった！</button></div>
+  <div class="row" style="margin-top:12px"><button class="primary" style="min-height:52px" onclick="closeMonth()">わかった！</button></div>
 </div></div>
 
 <!-- お知らせポップアップ -->
@@ -231,6 +232,7 @@ function newState(shopName){
     market:[], /* 今日買える車 */
     staff:[], candidates:[],
     bossExp:0, rescued:false, over:false,
+    plan:null, opened:false, /* 来客計画と開業済みフラグ */
     month:{sold:0,income:0,expense:0},
     speed:1, tut:-1, /* -1:終わった/やらない, 0〜3:ステップ */
     log:"🚗 お店を開きました！"
@@ -243,7 +245,13 @@ function serveCap(){return 1+S.staff.length;}
 function saveKey(){return SAVE_KEYS[curSlot];}
 function autoSave(){if(!S)return;try{LS.set(saveKey(),JSON.stringify(S));}catch(e){}}
 function readSlot(i){
-  try{const raw=LS.get(SAVE_KEYS[i]);if(!raw)return null;const o=JSON.parse(raw);if(!o||o.ver!==2)return null;return o;}catch(e){return null;}
+  try{const raw=LS.get(SAVE_KEYS[i]);if(!raw)return null;const o=JSON.parse(raw);if(!o||o.ver!==2)return null;return normalizeSave(o);}catch(e){return null;}
+}
+/* 昔のセーブに新しい項目を補う */
+function normalizeSave(o){
+  if(o.plan===undefined)o.plan=null;
+  if(o.opened===undefined)o.opened=(o.y*12+o.m)>=(2026*12+6);
+  return o;
 }
 
 /* ================= タイトル画面 ================= */
@@ -299,6 +307,7 @@ function loadGame(i){
   const s=readSlot(i);
   if(!s)return;
   curSlot=i;S=s;
+  ensurePlan();
   B=null;waitQueue=[];visitors=[];people=makePeople();
   enterGame();
 }
@@ -384,6 +393,41 @@ function setTier(id,tier){
   if(!car)return;
   car.tier=tier;car.price=tierPrice(car);
   renderAll();autoSave();
+}
+
+/* ================= 開業準備と来客の計画 ================= */
+const OPEN_YM=2026*12+6; /* 2026年6月に開業 */
+function ymIdx(y,m){return y*12+m;}
+function isPrep(){return S&&ymIdx(S.y,S.m)<OPEN_YM;} /* 4月・5月は開業準備中 */
+function monthsOpen(){return ymIdx(S.y,S.m)-OPEN_YM;} /* 開業して何ヶ月目か（6月=0） */
+function daysToOpen(){
+  if(!isPrep())return 0;
+  return Math.round((Date.UTC(2026,5,1)-Date.UTC(S.y,S.m-1,S.d))/86400000);
+}
+/* その月に来るお客さんの人数と日を決める */
+function makePlan(fromToday){
+  if(!S||isPrep()){if(S)S.plan=null;return;}
+  const dim=daysInMonth(S.y,S.m);
+  let n;
+  if(monthsOpen()<=0){
+    n=ri(1,3); /* 開業した月は 1〜3人 */
+  }else{
+    /* 妻 +1、店の大きさ（中+1・大+2）、半年ごとに +1（最大+2） */
+    n=ri(1,3)+1+S.shopSize+Math.min(2,Math.floor(monthsOpen()/6));
+  }
+  const startD=fromToday?S.d:1;
+  const pool=[];
+  for(let d=startD;d<=dim;d++)pool.push(d);
+  n=Math.min(n,pool.length);
+  const days=[];
+  for(let i=0;i<n;i++){const j=ri(0,pool.length-1);days.push(pool.splice(j,1)[0]);}
+  days.sort(function(a,b){return a-b;});
+  S.plan={y:S.y,m:S.m,days:days};
+}
+/* 計画が今月と合っていなければ作り直す（セーブ再開時の補完） */
+function ensurePlan(){
+  if(!S||isPrep())return;
+  if(!S.plan||S.plan.y!==S.y||S.plan.m!==S.m)makePlan(true);
 }
 
 /* ================= お客さん ================= */
@@ -575,10 +619,12 @@ function nextDay(){
   if(S.d>daysInMonth(S.y,S.m)){S.d=1;S.m++;if(S.m>12){S.m=1;S.y++;}monthEnd();}
   /* 「車を買う」画面を見ている間は並びを入れ替えない（見えている車とデータがズレて、買うボタンが効かなくなるため） */
   if(curPanel==="buy"){marketDirty=true;}else{refreshMarket();}
-  /* お客さんが来るかどうか */
-  let chance=0.5+S.shopSize*0.15+(S.cars.length?0: -0.4);
-  if(Math.random()<chance&&!B)spawnCustomer();
+  /* お客さんは「今月の計画」で決まった日に来る（開業準備中は来ない） */
+  ensurePlan();
+  if(!isPrep()&&S.plan&&S.plan.days.indexOf(S.d)>=0&&!B)spawnCustomer();
   renderTop();
+  renderPanel();
+  updateGuide();
 }
 function daysInMonth(y,m){return [31,(y%4===0?29:28),31,30,31,30,31,31,30,31,30,31][m-1];}
 function monthEnd(){
@@ -593,10 +639,27 @@ function monthEnd(){
     (pay>0?"<p class='note'>仲間のお給料 "+man(pay)+" を払いました</p>":"")+
     "<div class='moneyrow' style='border-top:2px solid #e5c98c;margin-top:6px;padding-top:8px'><span>🏦 今のお金</span><span class='v'>"+man(Math.max(0,S.money))+"</span></div>";
   S.month={sold:0,income:0,expense:0};
+  /* 新しい月の来客計画を立てる（開業後の月だけ） */
+  if(!isPrep())makePlan(false);
+  /* 6月になったらグランドオープン */
+  if(S.y===2026&&S.m===6&&!S.opened){S.opened=true;pendingOpenParty=true;}
   openModal("monthModal");
   refreshCandidates();
   checkMoney();
   renderAll();autoSave();
+}
+/* 今月のまとめを閉じる（グランドオープンのお祝いが待っていたら出す） */
+let pendingOpenParty=false;
+function closeMonth(){
+  closeModal("monthModal");
+  if(pendingOpenParty){
+    pendingOpenParty=false;
+    $("popBody").innerHTML="<div class='rankpop'>🎉</div>"+
+      "<p style='text-align:center;font-size:19px'><b>グランドオープン！</b></p>"+
+      "<p style='text-align:center'>今日から お客さんが来るようになりました。<br>今月は <b>"+(S.plan?S.plan.days.length:0)+"人</b> くらい 来る予定です。<br><span class='small'>車を並べて、お客さんを待とう！</span></p>";
+    openModal("popModal");
+    news("🎉 グランドオープン！ 今日からお客さんが来ます");
+  }
 }
 function gameOverToTitle(){closeModal("overModal");showTitle();}
 
@@ -624,7 +687,9 @@ function updateGuide(){
   g.classList.remove("hidden");
   let btn="";
   if(S.tut===2)btn=" <button class='good' onclick='tutOk()'>わかった！</button>";
-  g.innerHTML=TUT_TEXT[S.tut]+btn+" <button onclick='tutSkip()' style='float:right'>スキップ</button>";
+  let text=TUT_TEXT[S.tut];
+  if(S.tut===3&&isPrep())text="🏗️ いまは開業準備中だよ。6月1日のオープンまで、車を買って そろえておこう！ オープンしたら お客さんが来るよ";
+  g.innerHTML=text+btn+" <button onclick='tutSkip()' style='float:right'>スキップ</button>";
 }
 function tutOk(){if(S&&S.tut===2){S.tut=3;updateGuide();autoSave();}}
 function tutSkip(){if(S){S.tut=-1;updateGuide();autoSave();}}
@@ -666,8 +731,17 @@ function renderPanel(){
   if(h!==_panelHtml){root.innerHTML=h;_panelHtml=h;}
 }
 function shopPanel(){
-  return "<div class='panel'><h2>🏠 "+esc(S.shopName)+"</h2>"+
+  let top="";
+  if(isPrep()){
+    top="<div class='prep-banner'>🏗️ <b>開業準備中です</b><br>"+
+    "車を買って、キレイにして、並べておこう！<br>"+
+    "🎉 オープンは <b>6月1日</b>（あと <b>"+daysToOpen()+"日</b>）</div>";
+  }
+  return "<div class='panel'><h2>🏠 "+esc(S.shopName)+"</h2>"+top+
   "<div class='moneyrow'><span>🚙 置ける車</span><span class='v'>"+S.cars.length+"台 / "+SHOP_SIZES[S.shopSize].cap+"台まで</span></div>"+
+  (isPrep()
+    ?"<div class='moneyrow'><span>🚶 今月のお客さん</span><span class='v'>開業準備中なので まだ来ません</span></div>"
+    :"<div class='moneyrow'><span>🚶 今月のお客さん</span><span class='v'>"+(S.plan?S.plan.days.length:0)+"人くらい来ます</span></div>")+
   "<div class='moneyrow'><span>🤝 同時に相手できるお客さん</span><span class='v'>"+serveCap()+"人</span></div>"+
   "<div class='row' style='margin-top:10px'><button onclick='renameShop()'>✏️ 店の名前を変える</button>"+
   "<button onclick='backToTitle()'>🏠 タイトルにもどる</button></div>"+
@@ -997,15 +1071,15 @@ function drawPerson(g,x,y,p){
   }
 }
 
-/* ================= カード用・車の絵（横から見た車） ================= */
+/* ================= カード用・車の絵（正面寄り3/4・実車風イラスト） ================= */
 const _carImgCache={};
 function carImgURL(car){
   if(!car)return "";
-  const key=car.type+"|"+car.color+"|"+car.cond;
+  const key=car.name+"|"+car.color+"|"+car.cond;
   if(_carImgCache[key]!==undefined)return _carImgCache[key];
   let url="";
   try{
-    const cv=document.createElement("canvas");cv.width=220;cv.height=100;
+    const cv=document.createElement("canvas");cv.width=260;cv.height=150;
     const g=cv.getContext("2d");
     if(g){drawCarSide(g,car);url=cv.toDataURL("image/png");}
   }catch(e){url="";}
@@ -1031,46 +1105,246 @@ function wheelS(g,x,y,r){
   g.fillStyle="#2e2a26";g.beginPath();g.arc(x,y,r,0,7);g.fill();g.strokeStyle=INK;g.lineWidth=3;g.stroke();
   g.fillStyle="#c9cdd1";g.beginPath();g.arc(x,y,r*0.48,0,7);g.fill();g.strokeStyle=INK;g.lineWidth=2;g.stroke();
 }
+/* 車種ごとの描き分けパラメータ（cabin=形, light=ヘッドライト, grille=大きさ0〜2） */
+const CAR_STYLE={
+  "N-BOX":{cabin:"tall",light:"square",grille:1,slide:true},
+  "タント":{cabin:"tall",light:"round",grille:0,slide:true},
+  "ハスラー":{cabin:"tall",light:"round",grille:1,slide:true,rails:true,bumper:true},
+  "ムーヴ":{cabin:"tall",light:"oval",grille:0,slide:true},
+  "ワゴンR":{cabin:"tall",light:"square",grille:1},
+  "ヤリス":{cabin:"hatch",light:"sharp",grille:2},
+  "フィット":{cabin:"hatch",light:"oval",grille:0},
+  "ノート":{cabin:"hatch",light:"sharp",grille:1},
+  "スイフト":{cabin:"hatch",light:"oval",grille:1,spoiler:true},
+  "プリウス":{cabin:"slope",light:"sharp",grille:0},
+  "カローラ":{cabin:"sedan",light:"sharp",grille:1},
+  "アコード":{cabin:"sedan",light:"sharp",grille:1},
+  "MAZDA3":{cabin:"sedan",light:"oval",grille:2},
+  "フォレスター":{cabin:"suv",light:"square",grille:1,rails:true,bumper:true},
+  "RAV4":{cabin:"suv",light:"sharp",grille:2,rails:true,bumper:true},
+  "ヴェゼル":{cabin:"suv",light:"sharp",grille:1},
+  "CX-5":{cabin:"suv",light:"sharp",grille:2,rails:true},
+  "ステップワゴン":{cabin:"van",light:"square",grille:1,slide:true},
+  "ノア":{cabin:"van",light:"square",grille:2,slide:true},
+  "セレナ":{cabin:"van",light:"vertical",grille:1,slide:true},
+  "フリード":{cabin:"van",light:"oval",grille:1,slide:true},
+  "GR86":{cabin:"coupe",light:"sharp",grille:1,spoiler:true},
+  "ロードスター":{cabin:"open",light:"oval",grille:1},
+  "BRZ":{cabin:"coupe",light:"sharp",grille:1,spoiler:true},
+  "フェアレディZ":{cabin:"coupe",light:"oval",grille:1,nose:1}
+};
+const TYPE_CABIN={"軽":"tall","コンパクト":"hatch","セダン":"sedan","SUV":"suv","ミニバン":"van","スポーツ":"coupe"};
+const CABIN_GEO={
+  tall:{roofY:26,beltY:67,hoodY:72,wsBase:62,wsTop:84,roofRear:212,wheel:15,boxy:true},
+  van:{roofY:24,beltY:65,hoodY:70,wsBase:60,wsTop:82,roofRear:215,wheel:15,boxy:true},
+  hatch:{roofY:38,beltY:74,hoodY:80,wsBase:80,wsTop:108,roofRear:194,wheel:14,boxy:false},
+  sedan:{roofY:44,beltY:78,hoodY:84,wsBase:90,wsTop:118,roofRear:190,wheel:14,boxy:false},
+  slope:{roofY:42,beltY:76,hoodY:82,wsBase:88,wsTop:114,roofRear:196,wheel:14,boxy:false},
+  suv:{roofY:32,beltY:72,hoodY:78,wsBase:72,wsTop:96,roofRear:206,wheel:17,boxy:true},
+  coupe:{roofY:52,beltY:82,hoodY:90,wsBase:98,wsTop:126,roofRear:180,wheel:15,boxy:false},
+  open:{roofY:62,beltY:84,hoodY:92,wsBase:94,wsTop:114,roofRear:168,wheel:15,boxy:false}
+};
+function carStyle(car){
+  const base={cabin:TYPE_CABIN[car.type]||"hatch",light:"oval",grille:1,slide:false,rails:false,spoiler:false,bumper:false,nose:0};
+  const o=CAR_STYLE[car.name]||{};
+  for(const k in o)base[k]=o[k];
+  return base;
+}
+const OUT34="rgba(90,74,58,.55)";
+function grad34(g,y0,y1,c0,c1){
+  const gr=g.createLinearGradient(0,y0,0,y1);
+  gr.addColorStop(0,c0);gr.addColorStop(1,c1);
+  return gr;
+}
+function polyFill(g,pts,fill,lw){
+  g.beginPath();g.moveTo(pts[0][0],pts[0][1]);
+  for(let i=1;i<pts.length;i++)g.lineTo(pts[i][0],pts[i][1]);
+  g.closePath();g.fillStyle=fill;g.fill();
+  if(lw){g.strokeStyle=OUT34;g.lineWidth=lw;g.lineJoin="round";g.stroke();}
+}
+/* ヘッドライト（形: round/oval/square/sharp/vertical） */
+function headlight34(g,cx,cy,s,kind,dim){
+  g.save();g.translate(cx,cy);g.scale(s,s);
+  const core=dim?"#dfe9ee":"#fff6d8", rim=dim?"#aebfc7":"#ffe9a8";
+  function lens(pathFn){
+    pathFn();
+    const gr=g.createRadialGradient(-2,-2,1,0,0,12);
+    gr.addColorStop(0,"#ffffff");gr.addColorStop(.45,core);gr.addColorStop(1,rim);
+    g.fillStyle=gr;g.fill();
+    g.strokeStyle="rgba(120,125,130,.8)";g.lineWidth=1.4;g.stroke();
+    g.fillStyle="rgba(255,255,255,.85)";g.beginPath();g.ellipse(-3,-3,2.6,1.6,-.6,0,7);g.fill();
+  }
+  if(kind==="round"){lens(function(){g.beginPath();g.arc(0,0,9,0,7);});}
+  else if(kind==="square"){lens(function(){rr(g,-10,-6,20,12,4);});}
+  else if(kind==="vertical"){lens(function(){rr(g,-4.5,-11,9,22,4);});}
+  else if(kind==="sharp"){lens(function(){g.beginPath();g.moveTo(-13,3);g.quadraticCurveTo(-2,-6,13,-4);g.quadraticCurveTo(6,3,-4,5);g.quadraticCurveTo(-10,5,-13,3);g.closePath();});}
+  else{lens(function(){g.beginPath();g.ellipse(0,0,11,6.5,-.12,0,7);});}
+  g.restore();
+}
+/* タイヤ＋ホイール（スポーク付き） */
+function wheel34(g,x,y,r){
+  g.fillStyle="rgba(40,36,32,.9)";g.beginPath();g.arc(x,y,r,0,7);g.fill();
+  g.strokeStyle=OUT34;g.lineWidth=1.6;g.stroke();
+  g.fillStyle="#3a3a40";g.beginPath();g.arc(x,y,r*.86,0,7);g.fill();
+  const rg=g.createRadialGradient(x-2,y-2,1,x,y,r*.6);
+  rg.addColorStop(0,"#f2f4f6");rg.addColorStop(1,"#b9bfc6");
+  g.fillStyle=rg;g.beginPath();g.arc(x,y,r*.58,0,7);g.fill();
+  g.strokeStyle="#8f979e";g.lineWidth=1.2;g.stroke();
+  g.strokeStyle="#9aa1a8";g.lineWidth=Math.max(1.6,r*.13);
+  for(let i=0;i<5;i++){
+    const a=i/5*Math.PI*2-.4;
+    g.beginPath();g.moveTo(x,y);g.lineTo(x+Math.cos(a)*r*.5,y+Math.sin(a)*r*.5);g.stroke();
+  }
+  g.fillStyle="#6a7178";g.beginPath();g.arc(x,y,r*.16,0,7);g.fill();
+}
+/* 正面寄り3/4ビューで車を描く（売買カード用） */
 function drawCarSide(g,car){
+  const st=carStyle(car);
+  const geo=CABIN_GEO[st.cabin]||CABIN_GEO.hatch;
   const col=CAR_PAINT[car.color]||"#ccc";
-  const win="#bfccd2";
+  const GY=130, frontX=34, rearX=230, botY=GY-6;
+  const roofY=geo.roofY, beltY=geo.beltY, hoodY=geo.hoodY;
+  const wsBase=geo.wsBase+(st.nose?16:0), wsTop=geo.wsTop+(st.nose?14:0), roofRear=geo.roofRear+(st.nose?-6:0);
+  const isOpen=st.cabin==="open";
   /* 影 */
-  g.fillStyle="rgba(58,46,34,.16)";g.beginPath();g.ellipse(112,88,90,6,0,0,7);g.fill();
-  let wheels=[[54,74,13],[166,74,13]];
-  if(car.type==="軽"){
-    trace(g,[["M",30,72],["L",30,34],["Q",30,24,42,24],["L",182,24],["Q",194,24,194,36],["L",194,72]]);fillStroke(g,col);
-    trace(g,[["M",42,32],["L",182,32],["L",182,52],["L",42,52]]);fillStroke(g,win,2.6);
-    g.fillStyle=col;[86,128].forEach(function(x){g.fillRect(x,32,6,20);});
-  }else if(car.type==="コンパクト"){
-    trace(g,[["M",28,74],["L",28,60],["Q",28,50,42,48],["L",66,46],["Q",82,28,116,27],["L",146,27],["Q",174,28,186,46],["L",194,52],["Q",200,55,200,64],["L",200,74]]);fillStroke(g,col);
-    trace(g,[["M",76,45],["Q",90,33,114,32],["L",142,32],["Q",164,33,176,45]]);fillStroke(g,win,2.6);
-    g.strokeStyle=INK;g.lineWidth=2;g.beginPath();g.moveTo(124,32);g.lineTo(124,45);g.stroke();
-  }else if(car.type==="セダン"){
-    trace(g,[["M",24,74],["L",24,61],["Q",24,52,38,50],["L",62,48],["Q",78,30,112,29],["L",146,29],["Q",172,30,184,48],["L",194,53],["Q",202,56,202,65],["L",202,74]]);fillStroke(g,col);
-    trace(g,[["M",72,47],["Q",86,35,112,34],["L",142,34],["Q",162,35,172,47]]);fillStroke(g,win,2.6);
-    g.strokeStyle=INK;g.lineWidth=2;g.beginPath();g.moveTo(122,34);g.lineTo(122,47);g.stroke();
-  }else if(car.type==="SUV"){
-    wheels=[[56,72,15],[168,72,15]];
-    trace(g,[["M",26,76],["L",26,45],["Q",26,35,38,33],["L",50,31],["Q",58,14,84,13],["L",148,13],["Q",172,14,182,31],["L",194,37],["Q",202,40,202,52],["L",202,76]]);fillStroke(g,col);
-    trace(g,[["M",60,30],["Q",68,19,88,18],["L",144,18],["Q",164,19,174,30]]);fillStroke(g,win,2.6);
-    g.strokeStyle=INK;g.lineWidth=2;g.beginPath();g.moveTo(116,18);g.lineTo(116,30);g.stroke();
-  }else if(car.type==="ミニバン"){
-    trace(g,[["M",24,74],["L",24,26],["Q",24,16,36,16],["L",186,16],["Q",198,16,198,28],["L",198,74]]);fillStroke(g,col);
-    trace(g,[["M",36,24],["L",186,24],["L",186,44],["L",36,44]]);fillStroke(g,win,2.6);
-    g.fillStyle=col;[74,112,150].forEach(function(x){g.fillRect(x,24,6,20);});
-    g.strokeStyle=INK;g.lineWidth=2;g.beginPath();g.moveTo(112,50);g.lineTo(112,72);g.stroke();
-  }else{ /* スポーツ */
-    wheels=[[54,76,12],[168,76,12]];
-    trace(g,[["M",22,51],["L",50,47],["L",54,54],["L",30,58]]);fillStroke(g,shade(col,0.8),2.6);
-    trace(g,[["M",22,76],["L",22,65],["Q",22,57,36,55],["L",76,51],["Q",94,39,124,39],["L",148,39],["Q",176,41,190,53],["L",198,57],["Q",206,60,206,68],["L",206,76]]);fillStroke(g,col);
-    trace(g,[["M",84,50],["Q",98,44,122,43],["L",144,43],["Q",164,44,176,51]]);fillStroke(g,win,2.6);
+  g.fillStyle="rgba(58,46,34,.20)";g.beginPath();g.ellipse(133,134,106,7,0,0,7);g.fill();
+  g.fillStyle="rgba(58,46,34,.12)";g.beginPath();g.ellipse(133,132,88,5,0,0,7);g.fill();
+  /* ---- ボディ（側面シルエット） ---- */
+  let seg;
+  if(isOpen){
+    seg=[["M",frontX+2,botY],["L",frontX,hoodY+2],
+      ["Q",frontX,hoodY-6,frontX+12,hoodY-8],["L",wsBase,hoodY-9],
+      ["L",wsTop,roofY],["Q",wsTop+16,roofY+4,wsTop+30,beltY-4],
+      ["Q",roofRear-6,beltY-6,rearX-14,hoodY-2],
+      ["Q",rearX-2,hoodY,rearX,hoodY+8],["L",rearX,botY]];
+  }else if(geo.boxy){
+    seg=[["M",frontX+2,botY],["L",frontX,hoodY+2],
+      ["Q",frontX,hoodY-7,frontX+11,hoodY-9],["L",wsBase,hoodY-11],
+      ["Q",wsBase+7,hoodY-17,wsTop,roofY+7],
+      ["Q",wsTop+8,roofY-1,wsTop+22,roofY],["L",roofRear,roofY],
+      ["Q",rearX-1,roofY,rearX,roofY+15],["L",rearX,botY]];
+  }else{
+    seg=[["M",frontX+2,botY],["L",frontX,hoodY+2],
+      ["Q",frontX,hoodY-6,frontX+12,hoodY-8],["L",wsBase,hoodY-10],
+      ["Q",wsBase+8,hoodY-16,wsTop,roofY+6],
+      ["Q",wsTop+10,roofY-1,wsTop+24,roofY+1],["L",roofRear,roofY+2],
+      ["Q",rearX-14,roofY+7,rearX-3,hoodY+7],
+      ["Q",rearX+1,hoodY+11,rearX,hoodY+16],["L",rearX,botY]];
   }
-  wheels.forEach(function(w){wheelS(g,w[0],w[1],w[2]);});
+  trace(g,seg);
+  g.fillStyle=grad34(g,roofY,botY,shade(col,1.16),shade(col,.84));
+  g.fill();g.strokeStyle=OUT34;g.lineWidth=2.2;g.lineJoin="round";g.stroke();
+  /* ボディ下部の陰影 */
+  polyFill(g,[[frontX+3,botY-13],[rearX-2,botY-13],[rearX-2,botY],[frontX+3,botY]],"rgba(60,45,30,.10)",0);
+  /* ---- ガラス（フロント＋サイド） ---- */
+  const glass=grad34(g,roofY,hoodY,"#e6eef2","#9db3bf");
+  if(isOpen){
+    /* オープンカー: フロントガラス枠＋むき出しの車内 */
+    polyFill(g,[[wsBase-2,hoodY-10],[wsTop,roofY+2],[wsTop+9,roofY+3],[wsBase+9,hoodY-8]],glass,1.6);
+    polyFill(g,[[wsTop+8,roofY+6],[roofRear-2,roofY+12],[roofRear+4,beltY-2],[wsTop+22,beltY-4]],"#4c4238",0);
+    g.fillStyle="#6b5a48";
+    g.beginPath();g.ellipse(wsTop+26,beltY-6,7,5,0,0,7);g.fill();
+    g.beginPath();g.ellipse(wsTop+44,beltY-6,7,5,0,0,7);g.fill();
+  }else{
+    /* フロントガラス（正面側） */
+    polyFill(g,[[frontX+9,hoodY-7],[frontX+30,roofY+16],[frontX+47,roofY+15],[frontX+41,hoodY-3]],glass,1.4);
+    /* サイドガラス */
+    const gx0=wsBase+8, gx1=roofRear-8;
+    polyFill(g,[[gx0,hoodY-9],[wsTop+3,roofY+7],[roofRear-4,roofY+7],[gx1,beltY-3],[gx0+14,beltY-3]],glass,1.6);
+    /* 映り込み */
+    g.fillStyle="rgba(255,255,255,.35)";
+    polyFill(g,[[gx0+16,hoodY-9],[wsTop+16,roofY+7],[wsTop+27,roofY+7],[gx0+30,beltY-3],[gx0+22,beltY-3]],"rgba(255,255,255,.30)",0);
+    /* ピラー（柱） */
+    g.fillStyle=col;
+    const pilW=geo.boxy?7:6;
+    g.fillRect(wsTop+26,roofY+6,pilW,beltY-roofY-9);
+    if(geo.boxy||st.cabin==="suv")g.fillRect((gx0+gx1)/2+8,roofY+6,pilW,beltY-roofY-9);
+    /* ルーフレール */
+    if(st.rails){
+      g.strokeStyle=shade(col,.62);g.lineWidth=3.4;g.lineCap="round";
+      g.beginPath();g.moveTo(wsTop+8,roofY-4);g.lineTo(roofRear-4,roofY-4);g.stroke();
+      g.lineWidth=2.4;
+      g.beginPath();g.moveTo(wsTop+20,roofY-4);g.lineTo(wsTop+20,roofY+1);g.stroke();
+      g.beginPath();g.moveTo(roofRear-16,roofY-4);g.lineTo(roofRear-16,roofY+1);g.stroke();
+    }
+    /* スポイラー */
+    if(st.spoiler){
+      polyFill(g,[[roofRear-16,roofY+1],[rearX-2,roofY+9],[rearX+1,roofY+14],[roofRear-12,roofY+8]],shade(col,.8),1.6);
+    }
+  }
+  /* ---- フロントフェイス（正面パネル） ---- */
+  const fp=[[frontX+1,hoodY-5],[frontX+43,hoodY+1],[frontX+43,botY-3],[frontX+1,botY-5]];
+  polyFill(g,fp,grad34(g,hoodY,botY,shade(col,1.05),shade(col,.88)),1.8);
+  const fx=frontX+22, fy=hoodY+13;
+  /* ヘッドライト（手前=大きく、奥=小さく） */
+  headlight34(g,fx+9,fy,1.05,st.light,false);
+  headlight34(g,fx-14,fy-1,.68,st.light,true);
+  /* エンブレム */
+  g.fillStyle="rgba(255,255,255,.75)";g.beginPath();g.arc(fx,hoodY+3,3,0,7);g.fill();
+  g.strokeStyle="rgba(120,125,130,.7)";g.lineWidth=1;g.stroke();
+  /* グリル */
+  if(st.grille>0){
+    const gw=12+st.grille*9, gh=6+st.grille*3.4;
+    rr(g,fx-gw/2,hoodY+22,gw,gh,3.5);
+    g.fillStyle="#3c4046";g.fill();g.strokeStyle="rgba(90,74,58,.5)";g.lineWidth=1.2;g.stroke();
+    g.strokeStyle="rgba(220,226,232,.75)";g.lineWidth=1.4;
+    for(let i=1;i<=2;i++){g.beginPath();g.moveTo(fx-gw/2+3,hoodY+22+gh*i/3);g.lineTo(fx+gw/2-3,hoodY+22+gh*i/3);g.stroke();}
+  }
+  /* バンパーの吸気口 */
+  rr(g,fx-14,GY-26,28,8,3.5);g.fillStyle="#454a51";g.fill();
+  /* スキッドプレート（SUV風バンパー） */
+  if(st.bumper){
+    polyFill(g,[[frontX+4,GY-13],[frontX+40,GY-11],[frontX+38,GY-5],[frontX+6,GY-5]],"#c8ccd1",1.2);
+    headlight34(g,fx-15,GY-19,.4,"round",true);
+    headlight34(g,fx+16,GY-19,.4,"round",true);
+  }
+  /* ナンバープレート（白） */
+  rr(g,fx-11,GY-24,22,12,2.5);
+  g.fillStyle="#f7f8f5";g.fill();g.strokeStyle="#a9adb2";g.lineWidth=1.3;g.stroke();
+  g.fillStyle="#c3c8cc";g.fillRect(fx-6,GY-20,12,2);g.fillRect(fx-6,GY-16.5,12,2);
+  /* ---- サイドの細部 ---- */
+  const line="rgba(74,59,42,.30)";
+  /* キャラクターライン */
+  g.strokeStyle="rgba(255,255,255,.35)";g.lineWidth=2;
+  g.beginPath();g.moveTo(frontX+50,beltY+9);g.quadraticCurveTo(140,beltY+5,rearX-12,beltY+10);g.stroke();
+  /* ドアの境目 */
+  g.strokeStyle=line;g.lineWidth=1.6;
+  const doorX1=wsBase+44, doorX2=doorX1+52;
+  g.beginPath();g.moveTo(doorX1,beltY+1);g.lineTo(doorX1,botY-10);g.stroke();
+  if(geo.boxy||st.cabin==="suv"||st.cabin==="sedan"||st.cabin==="slope"){
+    g.beginPath();g.moveTo(doorX2,beltY+1);g.lineTo(doorX2,botY-10);g.stroke();
+  }
+  /* ドアハンドル */
+  g.fillStyle="rgba(74,59,42,.4)";
+  rr(g,doorX1-13,beltY+5,9,3,1.5);g.fill();
+  rr(g,doorX2-13,beltY+5,9,3,1.5);g.fill();
+  /* スライドドアのレール */
+  if(st.slide){
+    g.strokeStyle="rgba(74,59,42,.38)";g.lineWidth=2;
+    g.beginPath();g.moveTo(doorX1+4,beltY+7);g.lineTo(rearX-6,beltY+7);g.stroke();
+  }
+  /* ドアミラー */
+  const mx=wsBase+2, my=beltY-3;
+  g.strokeStyle=OUT34;g.lineWidth=2;
+  g.beginPath();g.moveTo(mx,my+3);g.lineTo(mx+5,my-3);g.stroke();
+  rr(g,mx+3,my-9,12,8,3);g.fillStyle=shade(col,.95);g.fill();g.strokeStyle=OUT34;g.lineWidth=1.8;g.stroke();
+  rr(g,mx+5,my-7.5,6,5,2);g.fillStyle="#b9c9d2";g.fill();
+  /* ---- ホイールアーチとタイヤ ---- */
+  const wr=geo.wheel, fwX=frontX+38, rwX=rearX-38, wY=GY-3;
+  g.fillStyle="rgba(50,40,30,.28)";
+  g.beginPath();g.ellipse(fwX,wY,wr+4,wr*.6,0,Math.PI,0);g.fill();
+  g.beginPath();g.ellipse(rwX,wY,wr+4,wr*.6,0,Math.PI,0);g.fill();
+  wheel34(g,fwX,wY,wr);
+  wheel34(g,rwX,wY,wr);
+  /* ツヤ */
+  g.fillStyle="rgba(255,255,255,.16)";
+  g.beginPath();g.ellipse((frontX+rearX)/2,hoodY+16,(rearX-frontX)*.32,5,-.02,0,7);g.fill();
+  /* 状態の表現 */
   if(car.cond===0){
-    g.fillStyle="rgba(105,80,50,.35)";
-    [[64,64,17,6],[150,68,21,6],[104,71,14,5],[180,58,10,5]].forEach(function(d){g.beginPath();g.ellipse(d[0],d[1],d[2],d[3],0,0,7);g.fill();});
+    g.fillStyle="rgba(105,80,50,.32)";
+    [[70,112,20,6],[150,118,24,6],[110,121,15,5],[196,108,12,5],[52,120,13,5]].forEach(function(d){g.beginPath();g.ellipse(d[0],d[1],d[2],d[3],0,0,7);g.fill();});
   }
-  if(car.cond===2){spark(g,40,16,7);spark(g,186,10,5);}
+  if(car.cond===2){spark(g,44,18,7);spark(g,222,12,5);spark(g,120,8,4.5);}
 }
 
 /* ================= 起動 ================= */
