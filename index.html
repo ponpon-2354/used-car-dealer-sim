@@ -455,7 +455,7 @@ function ensurePlan(){
 /* ================= お客さん ================= */
 function genCustomer(){
   return {id:S.nextId++,name:pick(LAST)+" "+pick(FIRST),wantType:pick(TYPES),
-    budget:Math.round(rnd(40,380))*10000,x:240,y:262,tx:200,ty:190,bubble:"",bubbleT:0,stay:0,served:false};
+    budget:Math.round(rnd(40,380))*10000,x:228,y:238,tx:200,ty:190,bubble:"",bubbleT:0,stay:0,served:false};
 }
 function spawnCustomer(){
   const cu=genCustomer();
@@ -905,7 +905,7 @@ setInterval(()=>{
     const dx=v.tx-v.x,dy=v.ty-v.y,dist=Math.hypot(dx,dy);
     if(dist<4){
       if(!v.served&&!document.querySelector(".modal.open")){v.served=true;serveCustomer(v);}
-    }else{v.x+=dx/dist*1.3;v.y+=dy/dist*1.3;}
+    }else{v.x+=dx/dist*5;v.y+=dy/dist*5;}
   });
   drawScene();
 },100);
