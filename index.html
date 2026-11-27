@@ -280,6 +280,7 @@ body.at-title header.topbar,body.at-title .layout{display:none}
   <div class="row" style="margin-top:10px">
     <button onclick="openTutorial(0)">？遊び方（チュートリアル）</button>
     <button onclick="manualLoad()">📂 ロード</button>
+    <button onclick="renameShop()">✏️ 店の名前を変える</button>
     <button onclick="backToTitle()">🏠 タイトルにもどる</button>
     <button onclick="resetGame()">最初からやり直す</button>
   </div>
@@ -481,7 +482,7 @@ body.at-title header.topbar,body.at-title .layout{display:none}
     <p class="ts-sub">お店の名前を決めて、車を買って、キレイにして、売ろう！</p>
     <div id="slotList"></div>
     <div id="nameStep" style="display:none">
-      <p><b>お店の名前を決めてね</b>（12文字まで）<br>看板にその名前が出るよ。あとから変えることはできないから、よく考えてね。</p>
+      <p><b>お店の名前を決めてね</b>（12文字まで）<br>看板にその名前が出るよ。あとから「お店」の画面で変えることもできるよ。</p>
       <input type="text" id="shopNameInput" maxlength="12" placeholder="例: さくらモータース">
       <div class="row" style="margin-top:12px">
         <button class="primary" style="min-height:48px;flex:1" onclick="confirmNewGame()">🚗 お店をはじめる！</button>
@@ -1666,6 +1667,17 @@ function enterGame(){
   requestAnimationFrame(animLoop);
 }
 /* 保存してタイトルへ戻る */
+function renameShop(){
+  if(!S)return;
+  const cur=S.shopName||"さくらモータース";
+  const name=prompt("新しい店の名前を入れてね（12文字まで）",cur);
+  if(name===null)return;
+  const nm=name.trim().slice(0,12);
+  if(!nm){toast("名前が空なので変えませんでした");return;}
+  S.shopName=nm;
+  toast("🏠 店の名前を「"+nm+"」に変えました");
+  renderAll(); autoSave();
+}
 function backToTitle(){
   autoSave();
   stopGameLoop();
